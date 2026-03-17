@@ -23,6 +23,8 @@ Following rigorous fine-tuning using contrasting data pairs (Genuine vs. Forged/
 .
 ├── api/
 │   └── main.py                 # FastAPI application and model serving
+├── assets/                     # Public assets for documentation
+│   └── web_ui.png              # Screenshot of the Streamlit frontend
 ├── data/                       # Directory for raw and processed datasets (ignored in git)
 ├── models/                     # Directory for compiled .pt model weights (ignored in git)
 ├── notebooks/
@@ -30,8 +32,10 @@ Following rigorous fine-tuning using contrasting data pairs (Genuine vs. Forged/
 │   └── 02_train_siamese.ipynb      # Fine-tuning loop and data augmentation
 ├── app.py                      # Streamlit frontend application
 ├── run_all.py                  # Automation script to launch both API and Web UI
+├── test_api.py                 # Script for automated local API endpoint testing
 ├── requirements.txt            # Python dependencies
-└── README.md
+├── .gitignore                  # Git ignore rules for datasets, models, and environments
+└── README.md                   # Project documentation
 ```
 
 ## Quick Start
@@ -58,4 +62,3 @@ The `/verify` endpoint accepts a `multipart/form-data` POST request containing t
 - `file_uji`: The questioned signature document.
 
 Returns a JSON response containing the verification status, similarity score, threshold, and analytical conclusion.
-```
