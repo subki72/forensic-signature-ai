@@ -1,0 +1,32 @@
+# Python & Environments
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+.venv
+env/
+venv/
+legal_ai_env/
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+
+# Datasets & Images (Ignore contents but keep directory structure)
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+
+# Trained Models & Weights
+models/*.pt
+models/*.pth
+models/*.bin
+!models/.gitkeep
+
+# IDE & Editor
+.vscode/
+.idea/
+
+# OS Specific
+.DS_Store
+Thumbs.db
