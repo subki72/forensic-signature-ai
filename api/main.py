@@ -58,8 +58,8 @@ preprocess = transforms.Compose([
     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
 ])
 
-SYSTEM_THRESHOLD = 0.73
-"""Cosine similarity threshold derived from baseline forensic audit."""
+SYSTEM_THRESHOLD = 0.85
+"""Cosine similarity threshold. Raised to 0.85 to strictly reject forgeries using the fine-tuned model."""
 
 
 # ===========================================================================
