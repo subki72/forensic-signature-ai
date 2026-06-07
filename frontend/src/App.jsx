@@ -172,7 +172,7 @@ function App() {
 
             <div className="score-container">
               <div className="score-value text-gradient">
-                {(result.similarity_score * 100).toFixed(2)}%
+                {(Math.max(0, result.similarity_score) * 100).toFixed(2)}%
               </div>
               <div className="score-label">
                 Similarity Score — Threshold: {(result.system_threshold * 100).toFixed(1)}%
