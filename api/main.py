@@ -117,15 +117,15 @@ async def verify_signature(
         
         is_match = score >= system_threshold
         
-        # Output values kept in Indonesian to maintain frontend API contract
-        status = "ASLI (TERVERIFIKASI)" if is_match else "PALSU / TIDAK IDENTIK"
+        # Determine verification status
+        status = "AUTHENTIC (VERIFIED)" if is_match else "FORGERY / NOT IDENTICAL"
         
         return {
-            "verifikasi": {
+            "verification": {
                 "status": status,
-                "skor_kemiripan": round(score, 4),
-                "threshold_sistem": system_threshold,
-                "hasil_analisa": "Tanda tangan identik" if is_match else "Perbedaan tarikan tinta terdeteksi"
+                "similarity_score": round(score, 4),
+                "system_threshold": system_threshold,
+                "analysis": "Ink stroke anatomy is structurally consistent with the reference specimen." if is_match else "Significant deviations detected in stroke dynamics and pressure distribution."
             }
         }
         
