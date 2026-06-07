@@ -182,7 +182,7 @@ function App() {
                 <div
                   className="progress-fill"
                   style={{
-                    width: `${Math.min(100, Math.max(0, ((result.similarity_score + 1) / 2) * 100))}%`,
+                    width: `${Math.min(100, Math.max(0, result.similarity_score * 100))}%`,
                     background: isSuccess
                       ? 'linear-gradient(90deg, #7a9e7e, #a3c4a7)'
                       : 'linear-gradient(90deg, #b85c5c, #d48a8a)'
