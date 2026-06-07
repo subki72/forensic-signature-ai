@@ -1,3 +1,12 @@
+---
+title: Forensic Signature AI
+emoji: 🖋️
+colorFrom: yellow
+colorTo: red
+sdk: docker
+pinned: false
+---
+
 # Legal Document AI - Forensic Signature Verification
 
 An end-to-end artificial intelligence system for verifying the authenticity of
