@@ -172,17 +172,17 @@ function App() {
 
             <div className="score-container">
               <div className="score-value text-gradient">
-                {(Math.max(0, result.similarity_score) * 100).toFixed(2)}%
+                {(((result.similarity_score + 1) / 2) * 100).toFixed(2)}%
               </div>
               <div className="score-label">
-                Similarity Score — Threshold: {(result.system_threshold * 100).toFixed(1)}%
+                Similarity Score — Threshold: {(((result.system_threshold + 1) / 2) * 100).toFixed(1)}%
               </div>
 
               <div className="progress-bar">
                 <div
                   className="progress-fill"
                   style={{
-                    width: `${Math.min(100, Math.max(0, result.similarity_score * 100))}%`,
+                    width: `${Math.min(100, Math.max(0, ((result.similarity_score + 1) / 2) * 100))}%`,
                     background: isSuccess
                       ? 'linear-gradient(90deg, #7a9e7e, #a3c4a7)'
                       : 'linear-gradient(90deg, #b85c5c, #d48a8a)'
