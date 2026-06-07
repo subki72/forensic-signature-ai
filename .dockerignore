@@ -1,0 +1,18 @@
+# Hindari meng-upload file/folder berikut ke Hugging Face (Backend)
+frontend/
+notebooks/
+data/
+assets/
+app.py
+run_all.py
+test_api.py
+README.md
+.gitignore
+
+# Cache dan Environment lokal
+__pycache__/
+*.pyc
+.env
+venv/
+env/
+.vscode/
