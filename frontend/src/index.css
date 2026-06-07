@@ -190,6 +190,30 @@ button {
   position: relative;
 }
 
+.btn-remove {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 10;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid rgba(201, 169, 110, 0.3);
+  background: rgba(26, 20, 16, 0.85);
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  backdrop-filter: blur(4px);
+}
+
+.btn-remove:hover {
+  background: var(--accent-error);
+  border-color: var(--accent-error);
+  color: white;
+}
+
 /* Layout */
 .container {
   max-width: 960px;

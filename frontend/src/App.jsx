@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { UploadCloud, ShieldCheck, CheckCircle2, XCircle, AlertCircle } from 'lucide-react';
+import { UploadCloud, ShieldCheck, CheckCircle2, XCircle, AlertCircle, X } from 'lucide-react';
 import './index.css';
 
 function App() {
@@ -21,6 +21,12 @@ function App() {
       reader.onloadend = () => setPreview(reader.result);
       reader.readAsDataURL(file);
     }
+  };
+
+  const clearFile = (setFile, setPreview) => {
+    setFile(null);
+    setPreview(null);
+    setResult(null);
   };
 
   const handleVerify = async () => {
@@ -80,7 +86,16 @@ function App() {
                 onChange={(e) => handleFileChange(e, setMasterFile, setMasterPreview)}
               />
               {masterPreview ? (
-                <img src={masterPreview} alt="Reference Preview" className="image-preview" />
+                <>
+                  <img src={masterPreview} alt="Reference Preview" className="image-preview" />
+                  <button
+                    className="btn-remove"
+                    onClick={(e) => { e.stopPropagation(); clearFile(setMasterFile, setMasterPreview); }}
+                    title="Remove image"
+                  >
+                    <X size={16} />
+                  </button>
+                </>
               ) : (
                 <>
                   <UploadCloud className="dropzone-icon" />
@@ -101,7 +116,16 @@ function App() {
                 onChange={(e) => handleFileChange(e, setTestFile, setTestPreview)}
               />
               {testPreview ? (
-                <img src={testPreview} alt="Questioned Preview" className="image-preview" />
+                <>
+                  <img src={testPreview} alt="Questioned Preview" className="image-preview" />
+                  <button
+                    className="btn-remove"
+                    onClick={(e) => { e.stopPropagation(); clearFile(setTestFile, setTestPreview); }}
+                    title="Remove image"
+                  >
+                    <X size={16} />
+                  </button>
+                </>
               ) : (
                 <>
                   <UploadCloud className="dropzone-icon" />
