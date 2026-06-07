@@ -1,0 +1,21 @@
+{
+  "model_version": "v2.1",
+  "architecture": "SiameseNetwork_ResNet18_128dim",
+  "embedding_dim": 128,
+  "optimal_threshold": 0.6005434989929199,
+  "eer_threshold": 0.6474528312683105,
+  "eer": 0.22979797979797983,
+  "roc_auc": 0.8374242424242424,
+  "train_signers": 44,
+  "val_signers": 11,
+  "genuine_score_mean": 0.7491669951938092,
+  "forgery_score_mean": 0.2655479965124731,
+  "score_gap": 0.4836189986813362,
+  "training": {
+    "phase1_epochs": 10,
+    "phase2_epochs": 17,
+    "margin": 0.3,
+    "batch_size": 32,
+    "device": "cuda"
+  }
+}

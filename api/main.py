@@ -1,10 +1,11 @@
 """
-Legal Document AI - FastAPI Backend
-====================================
+Legal Document AI - FastAPI Backend (V2)
+========================================
 Production-ready REST API for forensic signature verification.
-Uses a fine-tuned ResNet18 Siamese Network to extract 512-dimensional
-feature vectors from signature images and computes Cosine Similarity
-to determine authenticity.
+Uses a multi-identity Siamese Network (ResNet18 + projection head)
+to extract L2-normalized 128-dimensional embeddings from signature
+images and computes Cosine Similarity to determine authenticity.
+Threshold is calibrated from ROC curve analysis on validation data.
 """
 
 from fastapi import FastAPI, UploadFile, File
@@ -17,6 +18,7 @@ import torchvision.models as models
 import torchvision.transforms as transforms
 import torch.nn.functional as F
 import os
+import json
 
 app = FastAPI(
     title="Legal Document AI API",
@@ -32,24 +34,71 @@ app.add_middleware(
 )
 
 # ===========================================================================
-# 1. CORE ENGINE SETUP
+# 1. CORE ENGINE SETUP (V2 — Multi-Identity Siamese Network)
 # ===========================================================================
-print("Initializing Forensic AI Engine...")
+print("Initializing Forensic AI Engine V2...")
 
-weights = models.ResNet18_Weights.DEFAULT
-resnet = models.resnet18(weights=weights)
-resnet = torch.nn.Sequential(*(list(resnet.children())[:-1]))
 
-MODEL_PATH = "models/forensic_signature_v1.pt"
-if os.path.exists(MODEL_PATH):
-    resnet.load_state_dict(
-        torch.load(MODEL_PATH, map_location="cpu", weights_only=True)
+class SiameseNetwork(torch.nn.Module):
+    """Siamese Network with ResNet18 backbone + projection head.
+
+    Produces L2-normalized 128-dim embeddings for cosine similarity.
+    Must match the architecture defined in notebooks/03_train_siamese_v2.ipynb.
+    """
+
+    def __init__(self, embedding_dim=128):
+        super().__init__()
+        backbone = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
+        self.features = torch.nn.Sequential(*list(backbone.children())[:-1])
+        self.projection = torch.nn.Sequential(
+            torch.nn.Linear(512, 256),
+            torch.nn.BatchNorm1d(256),
+            torch.nn.ReLU(inplace=True),
+            torch.nn.Dropout(0.3),
+            torch.nn.Linear(256, embedding_dim),
+        )
+
+    def forward_once(self, x):
+        x = self.features(x)
+        x = x.view(x.size(0), -1)
+        x = self.projection(x)
+        x = F.normalize(x, p=2, dim=1)
+        return x
+
+    def forward(self, x1, x2=None):
+        e1 = self.forward_once(x1)
+        if x2 is None:
+            return e1
+        e2 = self.forward_once(x2)
+        return e1, e2
+
+
+# Initialize model
+model = SiameseNetwork(embedding_dim=128)
+
+MODEL_PATH_V2 = "models/forensic_signature_v2.pt"
+CONFIG_PATH = "models/model_config.json"
+
+if os.path.exists(MODEL_PATH_V2):
+    model.load_state_dict(
+        torch.load(MODEL_PATH_V2, map_location="cpu", weights_only=True)
     )
-    print(f"Successfully loaded fine-tuned model weights from '{MODEL_PATH}'.")
+    print(f"Successfully loaded V2 model from '{MODEL_PATH_V2}'.")
 else:
-    print("WARNING: Fine-tuned model not found. Defaulting to pre-trained ResNet18.")
+    print("WARNING: V2 model not found. Using default ResNet18 weights.")
+    print("Please run notebooks/03_train_siamese_v2.ipynb to train the model.")
 
-resnet.eval()
+model.eval()
+
+# Load threshold from config (calibrated from ROC curve)
+if os.path.exists(CONFIG_PATH):
+    with open(CONFIG_PATH, "r") as f:
+        model_config = json.load(f)
+    SYSTEM_THRESHOLD = model_config.get("optimal_threshold", 0.85)
+    print(f"Loaded calibrated threshold from config: {SYSTEM_THRESHOLD:.4f}")
+else:
+    SYSTEM_THRESHOLD = 0.85
+    print(f"WARNING: Config not found. Using default threshold: {SYSTEM_THRESHOLD}")
 
 preprocess = transforms.Compose([
     transforms.ToPILImage(),
@@ -58,58 +107,79 @@ preprocess = transforms.Compose([
     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
 ])
 
-SYSTEM_THRESHOLD = 0.85
-"""Cosine similarity threshold. Raised to 0.85 to strictly reject forgeries using the fine-tuned model."""
-
 
 # ===========================================================================
-# 2. FEATURE EXTRACTION
+# 2. FEATURE EXTRACTION (V2 Pipeline)
 # ===========================================================================
 def extract_feature_vector(image_bytes: bytes) -> torch.Tensor | None:
-    """Extract a 512-dimensional feature vector from raw image bytes.
+    """Extract a 128-dimensional L2-normalized feature vector from raw image bytes.
 
-    Pipeline:
-        1. Decode image bytes into an OpenCV BGR array.
-        2. Convert to grayscale and apply adaptive Gaussian thresholding
-           to isolate ink strokes from the paper background.
-        3. Detect contours and crop to the largest bounding box with padding.
-        4. Pass the cropped RGB region through the ResNet18 backbone.
+    V2 Pipeline:
+        1. Decode image bytes to grayscale.
+        2. Otsu binarization to isolate ink strokes.
+        3. Morphological closing to connect nearby strokes.
+        4. Detect ALL contours and compute merged bounding box.
+        5. Crop, pad to square (preserve aspect ratio), resize to 224x224.
+        6. Pass through SiameseNetwork for L2-normalized 128-dim embedding.
 
     Args:
         image_bytes: Raw bytes of a signature image (JPEG/PNG).
 
     Returns:
-        A 512-dimensional ``torch.Tensor``, or ``None`` if decoding fails.
+        A 128-dimensional L2-normalized ``torch.Tensor``, or ``None``
+        if decoding fails.
     """
     nparr = np.frombuffer(image_bytes, np.uint8)
-    image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-    if image is None:
+    img = cv2.imdecode(nparr, cv2.IMREAD_GRAYSCALE)
+    if img is None:
         return None
 
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-    binary = cv2.adaptiveThreshold(
-        blurred, 255,
-        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-        cv2.THRESH_BINARY_INV, 11, 2,
+    # Otsu binarization
+    blurred = cv2.GaussianBlur(img, (5, 5), 0)
+    _, binary = cv2.threshold(
+        blurred, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU
     )
 
-    contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    if contours:
-        largest = max(contours, key=cv2.contourArea)
-        x, y, w, h = cv2.boundingRect(largest)
-        pad = 15
-        x1, y1 = max(0, x - pad), max(0, y - pad)
-        x2 = min(image.shape[1], x + w + pad)
-        y2 = min(image.shape[0], y + h + pad)
-        cropped = image[y1:y2, x1:x2]
-    else:
-        cropped = image
+    # Morphological closing to connect nearby strokes
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+    binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel)
 
-    rgb = cv2.cvtColor(cropped, cv2.COLOR_BGR2RGB)
+    # Find ALL contours and merge bounding boxes
+    contours, _ = cv2.findContours(
+        binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+    )
+    contours = [c for c in contours if cv2.contourArea(c) > 50]
+
+    if contours:
+        all_points = np.vstack(contours)
+        x, y, w, h = cv2.boundingRect(all_points)
+        pad = 15
+        x1 = max(0, x - pad)
+        y1 = max(0, y - pad)
+        x2 = min(img.shape[1], x + w + pad)
+        y2 = min(img.shape[0], y + h + pad)
+        cropped = binary[y1:y2, x1:x2]
+    else:
+        cropped = binary
+
+    # Pad to square (preserve aspect ratio)
+    ch, cw = cropped.shape
+    if ch == 0 or cw == 0:
+        cropped = binary
+        ch, cw = cropped.shape
+    max_dim = max(ch, cw)
+    padded = np.zeros((max_dim, max_dim), dtype=np.uint8)
+    y_off = (max_dim - ch) // 2
+    x_off = (max_dim - cw) // 2
+    padded[y_off:y_off + ch, x_off:x_off + cw] = cropped
+
+    # Resize and convert to 3-channel
+    resized = cv2.resize(padded, (224, 224), interpolation=cv2.INTER_AREA)
+    rgb = np.stack([resized, resized, resized], axis=-1)
+
     tensor = preprocess(rgb).unsqueeze(0)
     with torch.no_grad():
-        vector = resnet(tensor).squeeze()
+        vector = model.forward_once(tensor).squeeze()
     return vector
 
 

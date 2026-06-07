@@ -1,7 +1,13 @@
+# Core API
 fastapi>=0.100.0
 uvicorn>=0.23.0
 python-multipart>=0.0.6
-opencv-python>=4.8.0
+
+# Computer Vision
+opencv-python-headless>=4.8.0
 numpy>=1.24.0
+
+# PyTorch (CPU-only for deployment — keeps Docker image small)
+--extra-index-url https://download.pytorch.org/whl/cpu
 torch>=2.0.0
 torchvision>=0.15.0

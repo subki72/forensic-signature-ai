@@ -175,14 +175,14 @@ function App() {
                 {(result.similarity_score * 100).toFixed(2)}%
               </div>
               <div className="score-label">
-                Similarity Score — Threshold: {result.system_threshold}
+                Similarity Score — Threshold: {(result.system_threshold * 100).toFixed(1)}%
               </div>
 
               <div className="progress-bar">
                 <div
                   className="progress-fill"
                   style={{
-                    width: `${Math.min(100, Math.max(0, result.similarity_score * 100))}%`,
+                    width: `${Math.min(100, Math.max(0, ((result.similarity_score + 1) / 2) * 100))}%`,
                     background: isSuccess
                       ? 'linear-gradient(90deg, #7a9e7e, #a3c4a7)'
                       : 'linear-gradient(90deg, #b85c5c, #d48a8a)'
@@ -198,7 +198,7 @@ function App() {
         )}
       </main>
 
-      <div className="footer">Powered by ResNet-18 Siamese Architecture</div>
+      <div className="footer">Powered by Siamese Network V2 — ResNet-18 + Projection Head</div>
     </div>
   );
 }
