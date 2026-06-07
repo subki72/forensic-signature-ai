@@ -1,5 +1,15 @@
+"""
+Legal Document AI - FastAPI Backend
+====================================
+Production-ready REST API for forensic signature verification.
+Uses a fine-tuned ResNet18 Siamese Network to extract 512-dimensional
+feature vectors from signature images and computes Cosine Similarity
+to determine authenticity.
+"""
+
 from fastapi import FastAPI, UploadFile, File
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 import cv2
 import numpy as np
 import torch
@@ -8,11 +18,9 @@ import torchvision.transforms as transforms
 import torch.nn.functional as F
 import os
 
-from fastapi.middleware.cors import CORSMiddleware
-
 app = FastAPI(
-    title="Legal Document AI API", 
-    description="Production-Ready Forensic Signature Verification System"
+    title="Legal Document AI API",
+    description="Production-Ready Forensic Signature Verification System",
 )
 
 app.add_middleware(
@@ -23,27 +31,26 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ==========================================
+# ===========================================================================
 # 1. CORE ENGINE SETUP
-# ==========================================
+# ===========================================================================
 print("Initializing Forensic AI Engine...")
 
-# Initialize ResNet18 Architecture
 weights = models.ResNet18_Weights.DEFAULT
 resnet = models.resnet18(weights=weights)
 resnet = torch.nn.Sequential(*(list(resnet.children())[:-1]))
 
-# Load Fine-Tuned Weights
-model_path = "models/detektif_forensik_v1.pt"
-if os.path.exists(model_path):
-    resnet.load_state_dict(torch.load(model_path, map_location='cpu', weights_only=True))
-    print("Successfully loaded fine-tuned model weights (v1).")
+MODEL_PATH = "models/forensic_signature_v1.pt"
+if os.path.exists(MODEL_PATH):
+    resnet.load_state_dict(
+        torch.load(MODEL_PATH, map_location="cpu", weights_only=True)
+    )
+    print(f"Successfully loaded fine-tuned model weights from '{MODEL_PATH}'.")
 else:
     print("WARNING: Fine-tuned model not found. Defaulting to pre-trained ResNet18.")
 
 resnet.eval()
 
-# Image Preprocessing Pipeline
 preprocess = transforms.Compose([
     transforms.ToPILImage(),
     transforms.Resize((224, 224)),
@@ -51,86 +58,110 @@ preprocess = transforms.Compose([
     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
 ])
 
-# ==========================================
-# 2. FORENSIC EXTRACTION LOGIC
-# ==========================================
-def extract_dna_from_bytes(image_bytes):
-    # Convert incoming bytes to OpenCV format
+SYSTEM_THRESHOLD = 0.73
+"""Cosine similarity threshold derived from baseline forensic audit."""
+
+
+# ===========================================================================
+# 2. FEATURE EXTRACTION
+# ===========================================================================
+def extract_feature_vector(image_bytes: bytes) -> torch.Tensor | None:
+    """Extract a 512-dimensional feature vector from raw image bytes.
+
+    Pipeline:
+        1. Decode image bytes into an OpenCV BGR array.
+        2. Convert to grayscale and apply adaptive Gaussian thresholding
+           to isolate ink strokes from the paper background.
+        3. Detect contours and crop to the largest bounding box with padding.
+        4. Pass the cropped RGB region through the ResNet18 backbone.
+
+    Args:
+        image_bytes: Raw bytes of a signature image (JPEG/PNG).
+
+    Returns:
+        A 512-dimensional ``torch.Tensor``, or ``None`` if decoding fails.
+    """
     nparr = np.frombuffer(image_bytes, np.uint8)
     image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-    if image is None: return None
-    
-    # Preprocessing: Grayscale & Adaptive Thresholding
+    if image is None:
+        return None
+
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     blurred = cv2.GaussianBlur(gray, (5, 5), 0)
     binary = cv2.adaptiveThreshold(
-        blurred, 255, 
-        cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
-        cv2.THRESH_BINARY_INV, 11, 2
+        blurred, 255,
+        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY_INV, 11, 2,
     )
-    
-    # Contour detection and bounding box extraction with padding
+
     contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if contours:
-        largest_contour = max(contours, key=cv2.contourArea)
-        x, y, w, h = cv2.boundingRect(largest_contour)
-        
+        largest = max(contours, key=cv2.contourArea)
+        x, y, w, h = cv2.boundingRect(largest)
         pad = 15
-        x_p, y_p = max(0, x-pad), max(0, y-pad)
-        w_p, h_p = min(image.shape[1]-x_p, w+(pad*2)), min(image.shape[0]-y_p, h+(pad*2))
-        cropped = image[y_p:y_p+h_p, x_p:x_p+w_p]
+        x1, y1 = max(0, x - pad), max(0, y - pad)
+        x2 = min(image.shape[1], x + w + pad)
+        y2 = min(image.shape[0], y + h + pad)
+        cropped = image[y1:y2, x1:x2]
     else:
         cropped = image
-        
-    # Feature extraction (512-Dimensional Vector)
-    sig_rgb = cv2.cvtColor(cropped, cv2.COLOR_BGR2RGB)
-    input_tensor = preprocess(sig_rgb).unsqueeze(0)
-    with torch.no_grad():
-        dna = resnet(input_tensor).squeeze()
-    return dna
 
-# ==========================================
-# 3. RESTRICTED VERIFICATION ENDPOINT
-# ==========================================
+    rgb = cv2.cvtColor(cropped, cv2.COLOR_BGR2RGB)
+    tensor = preprocess(rgb).unsqueeze(0)
+    with torch.no_grad():
+        vector = resnet(tensor).squeeze()
+    return vector
+
+
+# ===========================================================================
+# 3. VERIFICATION ENDPOINT
+# ===========================================================================
 @app.post("/verify")
 async def verify_signature(
-    file_asli: UploadFile = File(...), 
-    file_uji: UploadFile = File(...)
+    file_asli: UploadFile = File(..., description="Reference (genuine) signature image"),
+    file_uji: UploadFile = File(..., description="Questioned signature image"),
 ):
+    """Compare two signature images and return a verification verdict.
+
+    Accepts a multipart/form-data POST with two image files. Returns a JSON
+    object containing the verification status, similarity score, system
+    threshold, and a human-readable analysis string.
+    """
     try:
-        # Read raw image bytes
-        bytes_asli = await file_asli.read()
-        bytes_uji = await file_uji.read()
-        
-        # Extract Signature DNA
-        dna_asli = extract_dna_from_bytes(bytes_asli)
-        dna_uji = extract_dna_from_bytes(bytes_uji)
-        
-        if dna_asli is None or dna_uji is None:
-            return JSONResponse(content={"error": "Failed to decode image data"}, status_code=400)
-        
-        # Calculate Cosine Similarity
-        score = F.cosine_similarity(dna_asli.unsqueeze(0), dna_uji.unsqueeze(0)).item()
-        
-        # System Threshold (Derived from baseline forensic audit)
-        system_threshold = 0.73
-        
-        is_match = score >= system_threshold
-        
-        # Determine verification status
-        status = "AUTHENTIC (VERIFIED)" if is_match else "FORGERY / NOT IDENTICAL"
-        
+        bytes_reference = await file_asli.read()
+        bytes_questioned = await file_uji.read()
+
+        vec_reference = extract_feature_vector(bytes_reference)
+        vec_questioned = extract_feature_vector(bytes_questioned)
+
+        if vec_reference is None or vec_questioned is None:
+            return JSONResponse(
+                content={"error": "Failed to decode one or both image files."},
+                status_code=400,
+            )
+
+        score = F.cosine_similarity(
+            vec_reference.unsqueeze(0), vec_questioned.unsqueeze(0)
+        ).item()
+
+        is_match = score >= SYSTEM_THRESHOLD
+
         return {
             "verification": {
-                "status": status,
+                "status": "AUTHENTIC (VERIFIED)" if is_match else "FORGERY / NOT IDENTICAL",
                 "similarity_score": round(score, 4),
-                "system_threshold": system_threshold,
-                "analysis": "Ink stroke anatomy is structurally consistent with the reference specimen." if is_match else "Significant deviations detected in stroke dynamics and pressure distribution."
+                "system_threshold": SYSTEM_THRESHOLD,
+                "analysis": (
+                    "Ink stroke anatomy is structurally consistent with the reference specimen."
+                    if is_match
+                    else "Significant deviations detected in stroke dynamics and pressure distribution."
+                ),
             }
         }
-        
+
     except Exception as e:
         return JSONResponse(content={"error": str(e)}, status_code=500)
+
 
 if __name__ == "__main__":
     import uvicorn

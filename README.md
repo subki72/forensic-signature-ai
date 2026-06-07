@@ -1,64 +1,138 @@
-# Legal Document AI - Signature Verification System
+# Legal Document AI - Forensic Signature Verification
 
-![Streamlit Web Interface](assets/web_ui.png)
+An end-to-end artificial intelligence system for verifying the authenticity of
+handwritten signatures on legal documents. The system combines computer vision
+preprocessing with a fine-tuned Siamese Network (ResNet-18 backbone) to detect
+forgeries through structural comparison of ink stroke anatomy.
 
-## Overview
-This repository contains an end-to-end artificial intelligence system designed to verify the authenticity of signatures on legal documents. Built to address the critical need for automated forensic document analysis, this system utilizes computer vision for precise signature extraction and a fine-tuned Siamese Network architecture to detect forgeries with high accuracy.
 
-## Technical Architecture
-The system is divided into four main components:
-1. **Computer Vision Pipeline (OpenCV):** Implements adaptive Gaussian thresholding and contour detection to automatically isolate, crop, and pad signatures from raw document scans, removing background noise and varying paper textures.
-2. **Deep Learning Engine (PyTorch):** Utilizes a ResNet18 backbone modified into a Siamese architecture. It extracts 512-dimensional feature vectors (DNA) from signatures and computes Cosine Similarity to measure anatomical structural differences.
-3. **Backend API (FastAPI):** A high-performance, asynchronous REST API serving the machine learning model in a production-ready environment.
-4. **Interactive Frontend (Streamlit):** A user-friendly web interface allowing non-technical users to upload master and questioned documents for real-time verification.
+## Architecture
 
-## Performance Metrics
-Following rigorous fine-tuning using contrasting data pairs (Genuine vs. Forged/Others), the system achieves exceptional margin separation:
-- **Genuine vs. Genuine Match:** ~0.98 Cosine Similarity
-- **Genuine vs. Forged Match:** ~0.07 Cosine Similarity
-- **System Threshold:** Set strictly at 0.73 to eliminate false positives in legal contexts.
+| Layer | Technology | Purpose |
+|---|---|---|
+| Computer Vision | OpenCV | Adaptive thresholding, contour detection, signature isolation |
+| Deep Learning | PyTorch (ResNet-18) | 512-dimensional feature extraction via Siamese architecture |
+| Backend API | FastAPI | Asynchronous REST endpoint for model serving |
+| Frontend | React + Vite | Interactive web interface with drag-and-drop upload |
+
+
+## Performance
+
+| Comparison | Cosine Similarity |
+|---|---|
+| Genuine vs. Genuine | ~0.98 |
+| Genuine vs. Forged | ~0.07 |
+| System Threshold | 0.73 |
+
 
 ## Repository Structure
-```text
+
+```
 .
 ├── api/
-│   └── main.py                 # FastAPI application and model serving
-├── assets/                     # Public assets for documentation
-│   └── web_ui.png              # Screenshot of the Streamlit frontend
-├── data/                       # Directory for raw and processed datasets (ignored in git)
-├── models/                     # Directory for compiled .pt model weights (ignored in git)
+│   └── main.py                    # FastAPI application and model serving
+├── frontend/                      # React (Vite) web interface
+│   ├── src/
+│   │   ├── App.jsx                # Main application component
+│   │   ├── index.css              # Design system and styling
+│   │   └── main.jsx               # React entry point
+│   ├── index.html
+│   ├── package.json
+│   └── vite.config.js
+├── models/                        # Trained model weights (.pt)
+├── data/                          # Raw and processed datasets (git-ignored)
 ├── notebooks/
-│   ├── 01_thresholding_test.ipynb  # R&D for OpenCV extraction and baseline audit
-│   └── 02_train_siamese.ipynb      # Fine-tuning loop and data augmentation
-├── app.py                      # Streamlit frontend application
-├── run_all.py                  # Automation script to launch both API and Web UI
-├── test_api.py                 # Script for automated local API endpoint testing
-├── requirements.txt            # Python dependencies
-├── .gitignore                  # Git ignore rules for datasets, models, and environments
-└── README.md                   # Project documentation
+│   ├── 01_thresholding_test.ipynb # OpenCV pipeline R&D and threshold calibration
+│   └── 02_train_siamese.ipynb     # Siamese network fine-tuning loop
+├── test_api.py                    # Automated API endpoint tests
+├── requirements.txt               # Python dependencies
+├── Dockerfile                     # Hugging Face Spaces deployment config
+├── .dockerignore
+└── .gitignore
 ```
+
 
 ## Quick Start
 
 ### 1. Environment Setup
-Create a virtual environment and install dependencies:
+
 ```bash
 conda create -n legal_ai_env python=3.10
 conda activate legal_ai_env
 pip install -r requirements.txt
 ```
 
-### 2. Running the Application
-A conductor script is provided to initialize both the FastAPI backend and the Streamlit frontend concurrently from a single terminal.
+### 2. Running the Backend
+
 ```bash
-python run_all.py
+uvicorn api.main:app --reload
 ```
-- The API will be available at: `http://localhost:8000/docs`
-- The Web UI will be available at: `http://localhost:8501`
 
-## API Documentation
-The `/verify` endpoint accepts a `multipart/form-data` POST request containing two image files:
-- `file_asli`: The verified master signature.
-- `file_uji`: The questioned signature document.
+The API will be available at `http://localhost:8000/docs`.
 
-Returns a JSON response containing the verification status, similarity score, threshold, and analytical conclusion.
+### 3. Running the Frontend
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+The web interface will be available at `http://localhost:5173`.
+
+
+## Deployment
+
+The system is designed for a split deployment architecture:
+
+- **Frontend** is deployed to [Vercel](https://vercel.com/) as a static React application.
+- **Backend** is deployed to [Hugging Face Spaces](https://huggingface.co/spaces) using the included Dockerfile.
+
+### Environment Variables
+
+| Variable | Where | Value |
+|---|---|---|
+| `VITE_API_URL` | Vercel | The public URL of the Hugging Face Space (e.g. `https://user-space.hf.space`) |
+
+
+## API Reference
+
+### `POST /verify`
+
+Accepts a `multipart/form-data` request with two image files:
+
+| Field | Type | Description |
+|---|---|---|
+| `file_asli` | `UploadFile` | Reference (genuine) signature image |
+| `file_uji` | `UploadFile` | Questioned signature image |
+
+**Response:**
+
+```json
+{
+  "verification": {
+    "status": "AUTHENTIC (VERIFIED)",
+    "similarity_score": 0.9842,
+    "system_threshold": 0.73,
+    "analysis": "Ink stroke anatomy is structurally consistent with the reference specimen."
+  }
+}
+```
+
+
+## Training
+
+The model is trained using the CEDAR Signature Dataset. The training pipeline is
+documented in the Jupyter notebooks under `notebooks/`:
+
+1. **01_thresholding_test.ipynb** -- Establishes the computer vision pipeline and
+   calibrates the cosine similarity threshold through a baseline forensic audit.
+2. **02_train_siamese.ipynb** -- Fine-tunes ResNet-18 using contrastive pairs
+   (genuine vs. forged) with `CosineEmbeddingLoss`.
+
+After training, the model weights are saved to `models/forensic_signature_v1.pt`.
+
+
+## License
+
+This project is intended for educational and research purposes.

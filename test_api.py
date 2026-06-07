@@ -1,56 +1,69 @@
+"""
+test_api.py
+===========
+Automated local test script for the /verify endpoint.
+Runs positive (genuine vs. genuine) and negative (genuine vs. forged)
+scenarios and prints the JSON response with timing information.
+
+Usage:
+    Ensure the FastAPI server is running first:
+        uvicorn api.main:app --reload
+
+    Then execute:
+        python test_api.py
+"""
+
 import requests
 import json
 import time
 
-# API Endpoint (Ensure FastAPI server is running)
 API_URL = "http://localhost:8000/verify"
 
-def test_signature(master_path, test_path, test_description):
-    print(f"\n[TESTING] {test_description}")
-    print(f"Master File : {master_path}")
-    print(f"Test File   : {test_path}")
-    
+
+def test_signature(master_path: str, test_path: str, description: str) -> None:
+    """Send two signature images to the verification API and print the result.
+
+    Args:
+        master_path: Filesystem path to the reference (genuine) signature.
+        test_path: Filesystem path to the questioned signature.
+        description: Human-readable label for this test scenario.
+    """
+    print(f"\n[TEST] {description}")
+    print(f"  Reference : {master_path}")
+    print(f"  Questioned: {test_path}")
+
     try:
-        # Open both images in binary read mode
-        with open(master_path, 'rb') as f_master, open(test_path, 'rb') as f_test:
-            
-            # Package as form-data
+        with open(master_path, "rb") as f_master, open(test_path, "rb") as f_test:
             files = {
-                'file_asli': f_master,
-                'file_uji': f_test
+                "file_asli": f_master,
+                "file_uji": f_test,
             }
-            
-            # Execute API request
-            start_time = time.time()
+
+            start = time.time()
             response = requests.post(API_URL, files=files)
-            end_time = time.time()
-            
-            # Display Results
+            elapsed = round(time.time() - start, 2)
+
             if response.status_code == 200:
-                result = response.json()
-                print(f"Processing Time: {round(end_time - start_time, 2)} seconds")
-                print("VERIFICATION RESULT:")
-                print(json.dumps(result, indent=4))
+                print(f"  Time: {elapsed}s")
+                print("  Result:")
+                print(json.dumps(response.json(), indent=4))
             else:
-                print(f"[ERROR] API Response {response.status_code}: {response.text}")
-                
+                print(f"  [ERROR] HTTP {response.status_code}: {response.text}")
+
     except FileNotFoundError as e:
-        print(f"[ERROR] Image file not found. Check the paths. ({e})")
+        print(f"  [ERROR] File not found: {e}")
     except requests.exceptions.ConnectionError:
-        print("[ERROR] Connection failed. Ensure 'uvicorn api.main:app' is running.")
+        print("  [ERROR] Connection refused. Is the API server running?")
 
-# ==========================================
-# TESTING SCENARIOS
-# ==========================================
+
 if __name__ == "__main__":
-    master_signature = "data/processed/asli_master/asli_1.jpg"
-    genuine_test_signature = "data/processed/asli_master/asli_2.jpg"
-    
-    # Sample from the Kaggle dataset
-    forged_test_signature = "data/raw/signatures/full_org/original_1_1.png" 
+    # Paths relative to the project root
+    master = "data/processed/asli_master/asli_1.jpg"
+    genuine = "data/processed/asli_master/asli_2.jpg"
+    forged = "data/raw/signatures/full_forg/forgeries_1_1.png"
 
-    # 1. POSITIVE TEST (Expected: High Score, Verified)
-    test_signature(master_signature, genuine_test_signature, "Genuine vs Genuine (Should be Verified)")
-    
-    # 2. NEGATIVE TEST (Expected: Low Score, Rejected)
-    test_signature(master_signature, forged_test_signature, "Genuine vs Forged/Unseen (Should be Rejected)")
+    # Positive test: two genuine specimens from the same signer
+    test_signature(master, genuine, "Genuine vs. Genuine (expected: VERIFIED)")
+
+    # Negative test: genuine specimen vs. a known forgery
+    test_signature(master, forged, "Genuine vs. Forged (expected: REJECTED)")
