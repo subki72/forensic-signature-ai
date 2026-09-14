@@ -1,32 +1,118 @@
-# Python & Environments
+# ==============================================================================
+# Protected Documentation (Strictly Local - Do Not Commit to Remote Repository)
+# ==============================================================================
+docs/
+
+# ==============================================================================
+# Python & Virtual Environments
+# ==============================================================================
 __pycache__/
 *.py[cod]
 *$py.class
-.env
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
 .venv
+.venv/
 env/
 venv/
+ENV/
 legal_ai_env/
 
-# Jupyter Notebook
-.ipynb_checkpoints/
+# ==============================================================================
+# Testing, Coverage & Benchmark Caches
+# ==============================================================================
+.pytest_cache/
+.benchmarks/
+.coverage
+.coverage.*
+htmlcov/
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
 
-# Datasets & Images (Ignore contents but keep directory structure)
+# ==============================================================================
+# Node & Frontend Bundles
+# ==============================================================================
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/.eslintcache
+.eslintcache
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ==============================================================================
+# Environment Variables & Local Configs
+# ==============================================================================
+.env
+.env.*
+!.env.example
+*.local
+
+# ==============================================================================
+# Jupyter Notebook Checkpoints
+# ==============================================================================
+.ipynb_checkpoints/
+*/.ipynb_checkpoints/*
+
+# ==============================================================================
+# Datasets & Image Caches (Ignore contents but preserve directory structure)
+# ==============================================================================
+extract/
 data/raw/*
 !data/raw/.gitkeep
 data/processed/*
 !data/processed/.gitkeep
 
-# Trained Models & Weights
-models/*.pt
+# ==============================================================================
+# Trained Model Weights & Checkpoints (Preserve model_config, LFS model, and .gitkeep)
+# ==============================================================================
 models/*.pth
 models/*.bin
+models/*.onnx
+!models/forensic_signature_v2.pt
 !models/.gitkeep
 
-# IDE & Editor
+# ==============================================================================
+# Operating System & Editor Temp Files
+# ==============================================================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
 .vscode/
 .idea/
+*.sublime-workspace
+*.sublime-project
 
-# OS Specific
-.DS_Store
-Thumbs.db
+# ==============================================================================
+# Temporary Files & Backups
+# ==============================================================================
+*.tmp
+*.bak
+*.swp
+*.swo
+*~
+.mypy_cache/
+.tox/

@@ -401,3 +401,98 @@ button {
   text-transform: uppercase;
   opacity: 0.5;
 }
+
+/* 3-Tier Verdict & Telemetry Additions */
+.status-inconclusive {
+  background: rgba(224, 159, 62, 0.15);
+  color: #e09f3e;
+  border: 1px solid rgba(224, 159, 62, 0.35);
+}
+
+.telemetry-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 0.8rem;
+  font-size: 0.8rem;
+  letter-spacing: 0.05em;
+  flex-wrap: wrap;
+}
+
+.telemetry-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-family: monospace;
+  font-size: 0.75rem;
+  background: rgba(201, 169, 110, 0.06);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+}
+
+.telemetry-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.telemetry-online {
+  background: #7a9e7e;
+  box-shadow: 0 0 6px #7a9e7e;
+}
+
+.telemetry-degraded {
+  background: #e09f3e;
+  box-shadow: 0 0 6px #e09f3e;
+}
+
+.telemetry-offline {
+  background: #b85c5c;
+  box-shadow: 0 0 6px #b85c5c;
+}
+
+.disclaimer-banner {
+  margin-top: 1.5rem;
+  padding: 1rem 1.2rem;
+  border-radius: var(--radius-sm);
+  background: rgba(201, 169, 110, 0.04);
+  border: 1px solid rgba(201, 169, 110, 0.15);
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  text-align: left;
+}
+
+.disclaimer-title {
+  font-weight: 600;
+  color: var(--accent-primary);
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.meta-chips {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 0.8rem;
+  flex-wrap: wrap;
+}
+
+.meta-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(201, 169, 110, 0.1);
+  color: var(--text-secondary);
+  font-family: monospace;
+}
+

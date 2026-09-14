@@ -1,5 +1,13 @@
-import { useState } from 'react';
-import { UploadCloud, ShieldCheck, CheckCircle2, XCircle, AlertCircle, X } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import {
+  ShieldCheck,
+  AlertCircle,
+} from 'lucide-react';
+import { checkLiveness, checkReadiness, verifySignatures } from './services/api';
+import TelemetryHeader from './components/TelemetryHeader';
+import DropzoneCard from './components/DropzoneCard';
+import VerdictBadge from './components/VerdictBadge';
+import ScoreBar from './components/ScoreBar';
 import './index.css';
 
 function App() {
@@ -13,9 +21,32 @@ function App() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
 
+  // System telemetry state
+  const [apiStatus, setApiStatus] = useState({ online: false, ready: false, checking: true });
+
+  useEffect(() => {
+    async function verifySystemTelemetry() {
+      const live = await checkLiveness();
+      const ready = await checkReadiness();
+      setApiStatus({
+        online: live.online,
+        ready: ready.ready,
+        checking: false,
+      });
+    }
+    verifySystemTelemetry();
+    const interval = setInterval(verifySystemTelemetry, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
   const handleFileChange = (e, setFile, setPreview) => {
     const file = e.target.files[0];
     if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        setError(`File '${file.name}' exceeds the 5 MB maximum size limit.`);
+        return;
+      }
+      setError(null);
       setFile(file);
       const reader = new FileReader();
       reader.onloadend = () => setPreview(reader.result);
@@ -31,7 +62,7 @@ function App() {
 
   const handleVerify = async () => {
     if (!masterFile || !testFile) {
-      setError("Please upload both signature documents before proceeding.");
+      setError('Please upload both reference and questioned signature documents.');
       return;
     }
 
@@ -39,108 +70,47 @@ function App() {
     setIsLoading(true);
     setResult(null);
 
-    const formData = new FormData();
-    formData.append('file_asli', masterFile);
-    formData.append('file_uji', testFile);
-
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-      const response = await fetch(`${apiUrl}/verify`, {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!response.ok) {
-        throw new Error(`API Error: ${response.status} ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      setResult(data.verification);
+      const verification = await verifySignatures(masterFile, testFile);
+      setResult(verification);
     } catch (err) {
-      console.error(err);
-      setError("Connection failed. Please ensure the backend server is running.");
+      setError(err.message || 'Verification request failed.');
     } finally {
       setIsLoading(false);
     }
   };
 
-  const isSuccess = result?.status === "AUTHENTIC (VERIFIED)";
-
   return (
     <div className="container">
-      <header className="header">
-        <h1 className="text-gradient">Legal Document AI</h1>
-        <p>Forensic Signature Verification</p>
-        <div className="divider" />
-      </header>
+      <TelemetryHeader apiStatus={apiStatus} />
 
       <main className="glass-panel" style={{ padding: '2rem' }}>
         <div className="grid-2">
           {/* Master Signature */}
-          <div className="glass-card" style={{ padding: '1.5rem' }}>
-            <h3 className="card-label">Reference Specimen</h3>
-            <div className={`dropzone ${masterFile ? 'active' : ''}`}>
-              <input
-                type="file"
-                accept="image/jpeg, image/png, image/jpg"
-                onChange={(e) => handleFileChange(e, setMasterFile, setMasterPreview)}
-              />
-              {masterPreview ? (
-                <>
-                  <img src={masterPreview} alt="Reference Preview" className="image-preview" />
-                  <button
-                    className="btn-remove"
-                    onClick={(e) => { e.stopPropagation(); clearFile(setMasterFile, setMasterPreview); }}
-                    title="Remove image"
-                  >
-                    <X size={16} />
-                  </button>
-                </>
-              ) : (
-                <>
-                  <UploadCloud className="dropzone-icon" />
-                  <div className="dropzone-title">Upload Reference Signature</div>
-                  <div className="dropzone-desc">The verified, authentic specimen</div>
-                </>
-              )}
-            </div>
-          </div>
+          <DropzoneCard
+            title="Reference Specimen (Asli)"
+            subtitle="Verified genuine specimen (Max 5MB)"
+            file={masterFile}
+            preview={masterPreview}
+            onFileSelect={(e) => handleFileChange(e, setMasterFile, setMasterPreview)}
+            onClear={() => clearFile(setMasterFile, setMasterPreview)}
+          />
 
           {/* Questioned Signature */}
-          <div className="glass-card" style={{ padding: '1.5rem' }}>
-            <h3 className="card-label">Questioned Document</h3>
-            <div className={`dropzone ${testFile ? 'active' : ''}`}>
-              <input
-                type="file"
-                accept="image/jpeg, image/png, image/jpg"
-                onChange={(e) => handleFileChange(e, setTestFile, setTestPreview)}
-              />
-              {testPreview ? (
-                <>
-                  <img src={testPreview} alt="Questioned Preview" className="image-preview" />
-                  <button
-                    className="btn-remove"
-                    onClick={(e) => { e.stopPropagation(); clearFile(setTestFile, setTestPreview); }}
-                    title="Remove image"
-                  >
-                    <X size={16} />
-                  </button>
-                </>
-              ) : (
-                <>
-                  <UploadCloud className="dropzone-icon" />
-                  <div className="dropzone-title">Upload Questioned Signature</div>
-                  <div className="dropzone-desc">The document under examination</div>
-                </>
-              )}
-            </div>
-          </div>
+          <DropzoneCard
+            title="Questioned Document (Uji)"
+            subtitle="Document under examination (Max 5MB)"
+            file={testFile}
+            preview={testPreview}
+            onFileSelect={(e) => handleFileChange(e, setTestFile, setTestPreview)}
+            onClear={() => clearFile(setTestFile, setTestPreview)}
+          />
         </div>
 
         {error && (
           <div className="error-box">
             <AlertCircle size={18} />
-            {error}
+            <span>{error}</span>
           </div>
         )}
 
@@ -160,45 +130,18 @@ function App() {
           )}
         </button>
 
-        {/* Results */}
+        {/* Verification Results Panel */}
         {result && (
           <div className="result-card glass-card">
-            <div className={`status-badge ${isSuccess ? 'status-success' : 'status-fail'}`}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                {isSuccess ? <CheckCircle2 size={20} /> : <XCircle size={20} />}
-                {isSuccess ? 'Authentic' : 'Forgery Detected'}
-              </div>
-            </div>
-
-            <div className="score-container">
-              <div className="score-value text-gradient">
-                {(((result.similarity_score + 1) / 2) * 100).toFixed(2)}%
-              </div>
-              <div className="score-label">
-                Similarity Score — Threshold: {(((result.system_threshold + 1) / 2) * 100).toFixed(1)}%
-              </div>
-
-              <div className="progress-bar">
-                <div
-                  className="progress-fill"
-                  style={{
-                    width: `${Math.min(100, Math.max(0, ((result.similarity_score + 1) / 2) * 100))}%`,
-                    background: isSuccess
-                      ? 'linear-gradient(90deg, #7a9e7e, #a3c4a7)'
-                      : 'linear-gradient(90deg, #b85c5c, #d48a8a)'
-                  }}
-                />
-              </div>
-            </div>
-
-            <div className="analysis-text">
-              <strong>Analysis:</strong> {result.analysis}
-            </div>
+            <VerdictBadge verdict={result.verdict} />
+            <ScoreBar result={result} />
           </div>
         )}
       </main>
 
-      <div className="footer">Powered by Siamese Network V2 — ResNet-18 + Projection Head</div>
+      <footer className="footer">
+        Powered by Siamese Network V2.1 — ResNet-18 Backbone & Projection Head
+      </footer>
     </div>
   );
 }

@@ -1,13 +1,32 @@
-# Core API
-fastapi>=0.100.0
-uvicorn>=0.23.0
-python-multipart>=0.0.6
+# ==============================================================================
+# Production Serving & Lightweight Deployment Dependencies
+# For model training and Jupyter notebooks, use: requirements-dev.txt
+# ==============================================================================
+# Core API Framework & Production ASGI Server
+# ==============================================================================
+fastapi>=0.110.0,<1.0.0
+uvicorn[standard]>=0.29.0,<1.0.0
+python-multipart>=0.0.9,<1.0.0
+pydantic>=2.7.0,<3.0.0
+pydantic-settings>=2.2.0,<3.0.0
 
-# Computer Vision
-opencv-python-headless>=4.8.0
-numpy>=1.24.0
+# ==============================================================================
+# Computer Vision & Numerical Array Processing
+# ==============================================================================
+opencv-python-headless>=4.9.0
+numpy>=1.26.0,<3.0.0
 
-# PyTorch (CPU-only for deployment — keeps Docker image small)
+# ==============================================================================
+# Deep Learning (CPU-only build for lightweight deployment)
+# ==============================================================================
 --extra-index-url https://download.pytorch.org/whl/cpu
-torch>=2.0.0
-torchvision>=0.15.0
+torch>=2.2.0,<3.0.0
+torchvision>=0.17.0,<1.0.0
+
+# ==============================================================================
+# Testing, Code Quality & Coverage Reporting
+# ==============================================================================
+pytest>=8.0.0,<10.0.0
+pytest-cov>=4.1.0,<8.0.0
+pytest-asyncio>=0.23.0,<2.0.0
+httpx>=0.27.0,<1.0.0
