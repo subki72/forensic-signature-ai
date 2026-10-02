@@ -1,11 +1,25 @@
-"""Signature verification endpoint with threadpool offload, strict validation, and rate limiting."""
+"""Signature verification endpoint with two-phase pipeline, threadpool offload,
+strict validation, and rate limiting.
+
+Pipeline:
+  Stage 1 (fast, < 10ms): Macro-Geometric Screening via HPP/VPP + ORB.
+  Stage 2 (deep, ~80ms):  Siamese ResNet micro-stroke kinematic analysis
+                          (only runs when Stage 1 passes).
+"""
 
 import time
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile, status
 from fastapi.concurrency import run_in_threadpool
 
 from api.config import settings
-from api.cv_pipeline import ImageProcessingError, preprocess_signature_bytes
+from api.cv_pipeline import (
+    ImageProcessingError,
+    decode_image,
+    isolate_ink_strokes,
+    extract_contour_bbox,
+    pad_and_resize,
+    normalize_image_to_tensor,
+)
 from api.engine import model_manager
 from api.logging_config import logger
 from api.schemas import (
@@ -49,24 +63,37 @@ def _validate_image_bytes(data: bytes, filename: str) -> None:
         )
 
 
-def _compute_forensic_similarity(
-    raw_reference: bytes, raw_questioned: bytes
-) -> float:
-    """CPU-bound worker executing CV preprocessing and neural inference.
+def _run_two_phase_pipeline(raw_reference: bytes, raw_questioned: bytes) -> dict:
+    """CPU-bound worker executing the complete 2-phase forensic pipeline.
 
     Executes in a threadpool worker to avoid starving the asyncio event loop.
+
+    Returns a dict with all verdict + telemetry fields needed to build
+    VerificationResult.
     """
-    # 1. Computer vision preprocessing (Otsu binarization, bounding box, padding)
-    tensor_reference = preprocess_signature_bytes(raw_reference)
-    tensor_questioned = preprocess_signature_bytes(raw_questioned)
+    # --- Decode and preprocess both images to binary maps + tensors -----------
+    # We need the binary images for Stage 1 (macro geometry) AND
+    # the normalized tensors for Stage 2 (Siamese ResNet).
 
-    # 2. Extract L2-normalized 128-dimensional embeddings
-    emb_reference = model_manager.extract_embedding(tensor_reference)
-    emb_questioned = model_manager.extract_embedding(tensor_questioned)
+    img_ref = decode_image(raw_reference)
+    binary_ref = isolate_ink_strokes(img_ref)
+    bbox_ref = extract_contour_bbox(binary_ref)
+    rgb_ref = pad_and_resize(binary_ref, bbox=bbox_ref, target_size=224)
+    tensor_ref = normalize_image_to_tensor(rgb_ref)
 
-    # 3. Calculate Cosine Similarity on unit hypersphere
-    similarity = model_manager.compute_similarity(emb_reference, emb_questioned)
-    return similarity
+    img_que = decode_image(raw_questioned)
+    binary_que = isolate_ink_strokes(img_que)
+    bbox_que = extract_contour_bbox(binary_que)
+    rgb_que = pad_and_resize(binary_que, bbox=bbox_que, target_size=224)
+    tensor_que = normalize_image_to_tensor(rgb_que)
+
+    # --- Execute 2-phase pipeline (Stage 1 gate → optional Stage 2) ----------
+    return model_manager.run_two_stage_pipeline(
+        binary_reference=binary_ref,
+        binary_questioned=binary_que,
+        tensor_reference=tensor_ref,
+        tensor_questioned=tensor_que,
+    )
 
 
 @router.post(
@@ -80,8 +107,12 @@ def _compute_forensic_similarity(
         429: {"model": ErrorResponse, "description": "Rate limit exceeded (10 requests/minute per IP)"},
         500: {"model": ErrorResponse, "description": "Internal verification error"},
     },
-    summary="Verify Signature Authenticity",
-    description="Compares a reference (genuine) specimen against a questioned signature using a Siamese Network.",
+    summary="Verify Signature Authenticity (Two-Phase Pipeline)",
+    description=(
+        "Runs a 2-phase forensic verification: "
+        "Stage 1 rejects cross-signer pairs via macro-geometric screening (HPP/VPP + ORB). "
+        "Stage 2 detects skilled forgeries via Siamese ResNet micro-stroke analysis."
+    ),
 )
 @limiter.limit("10/minute")
 async def verify_signature(
@@ -95,7 +126,7 @@ async def verify_signature(
         description="Questioned signature image file (JPEG/PNG/WEBP, max 5MB)",
     ),
 ) -> VerificationResponse:
-    """Execute forensic signature comparison between reference and questioned documents."""
+    """Execute two-phase forensic signature comparison between reference and questioned documents."""
     start_time = time.perf_counter()
 
     # 1. Read byte streams asynchronously
@@ -113,10 +144,10 @@ async def verify_signature(
     _validate_image_bytes(bytes_reference, file_asli.filename or "file_asli")
     _validate_image_bytes(bytes_questioned, file_uji.filename or "file_uji")
 
-    # 3. Execute CPU-bound inference in threadpool worker (prevents event loop freeze)
+    # 3. Execute CPU-bound 2-phase pipeline in threadpool (prevents event loop freeze)
     try:
-        similarity = await run_in_threadpool(
-            _compute_forensic_similarity, bytes_reference, bytes_questioned
+        pipeline_result = await run_in_threadpool(
+            _run_two_phase_pipeline, bytes_reference, bytes_questioned
         )
     except ImageProcessingError as ipe:
         logger.warning("Image processing error during verification: %s", ipe)
@@ -131,28 +162,35 @@ async def verify_signature(
             detail="An error occurred during signature feature extraction and analysis.",
         )
 
-    # 4. Evaluate 3-tier verdict and normalized percentage
-    verdict, status_label, confidence_band, analysis = model_manager.evaluate_verdict(similarity)
-    normalized_pct = round(((similarity + 1.0) / 2.0) * 100.0, 2)
     elapsed_ms = round((time.perf_counter() - start_time) * 1000.0, 2)
 
     logger.info(
-        "Verification completed in %.2f ms | Similarity: %.4f (%s%%) | Verdict: %s",
+        "Verification completed in %.2f ms | Macro=%.4f | Micro=%.4f | "
+        "Stage1_rejected=%s | Verdict: %s",
         elapsed_ms,
-        similarity,
-        normalized_pct,
-        verdict.value,
+        pipeline_result["macro_score"],
+        pipeline_result["micro_score"],
+        pipeline_result["stage_rejected"],
+        pipeline_result["verdict"].value,
     )
 
     result = VerificationResult(
-        verdict=verdict,
-        status=status_label,
-        similarity_score=similarity,
-        normalized_percentage=normalized_pct,
+        verdict=pipeline_result["verdict"],
+        status=pipeline_result["status"],
+        similarity_score=pipeline_result["similarity_score"],
+        normalized_percentage=pipeline_result["normalized_percentage"],
         system_threshold=round(model_manager.active_threshold, 4),
-        confidence_band=confidence_band,
-        analysis=analysis,
+        confidence_band=pipeline_result["confidence_band"],
+        analysis=pipeline_result["analysis"],
         latency_ms=elapsed_ms,
+        # Two-phase telemetry
+        macro_score=pipeline_result["macro_score"],
+        hpp_corr=pipeline_result["hpp_corr"],
+        vpp_corr=pipeline_result["vpp_corr"],
+        orb_ratio=pipeline_result["orb_ratio"],
+        micro_score=pipeline_result["micro_score"],
+        stage_rejected=pipeline_result["stage_rejected"],
+        rejection_stage=pipeline_result["rejection_stage"],
     )
 
     return VerificationResponse(verification=result)

@@ -140,7 +140,7 @@ function App() {
       </main>
 
       <footer className="footer">
-        Powered by Siamese Network V2.1 — ResNet-18 Backbone & Projection Head
+        Powered by Two-Phase Forensic Pipeline V2.3 — Stage 1: MacroGeo (HPP/VPP + ORB) · Stage 2: Siamese ResNet-18
       </footer>
     </div>
   );

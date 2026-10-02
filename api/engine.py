@@ -1,7 +1,14 @@
 """Machine Learning Inference Engine and Siamese Network model manager.
 
 Provides thread-safe model loading, L2-normalized embedding extraction,
-cosine similarity computation, and 3-tier forensic classification.
+cosine similarity computation, and 2-phase forensic classification.
+
+Pipeline:
+  Stage 1 (Macro-Geometric Gate): HPP/VPP projection profile correlation + ORB
+  keypoint matching. Rejects cross-signer pairs in < 10ms without running ResNet.
+
+  Stage 2 (Micro-Stroke Siamese): Only executes if Stage 1 passes. Detects
+  skilled forgeries via kinematic stroke dynamics using the Siamese ResNet-18.
 """
 
 import json
@@ -10,10 +17,16 @@ import threading
 import torch
 import torch.nn.functional as F
 import torchvision.models as models
+import numpy as np
 
 from api.config import settings
 from api.logging_config import logger
+from api.macro_geometry import compute_macro_score
 from api.schemas import VerdictEnum
+
+# Stage 1 gate threshold: pairs scoring below this are immediately FORGERY
+# (structural shape mismatch -- different writers or blatantly different forms)
+MACRO_GEOMETRY_THRESHOLD: float = 0.50
 
 
 class SiameseNetwork(torch.nn.Module):
@@ -89,7 +102,9 @@ class ModelManager:
         self.model_file_size_bytes: int = 0
         self.active_threshold: float = settings.AUTHENTIC_THRESHOLD
         self.inconclusive_threshold: float = settings.INCONCLUSIVE_THRESHOLD
-        self.model_version: str = "v2.1"
+        self.model_version: str = "v2.3"
+        self.macro_threshold: float = MACRO_GEOMETRY_THRESHOLD
+
 
         self._load_artifacts()
         self._initialized = True
@@ -232,6 +247,114 @@ class ModelManager:
 
         return verdict, status, confidence, analysis
 
+    def run_two_stage_pipeline(
+        self,
+        binary_reference: np.ndarray,
+        binary_questioned: np.ndarray,
+        tensor_reference: torch.Tensor,
+        tensor_questioned: torch.Tensor,
+    ) -> dict:
+        """Execute the 2-phase forensic verification pipeline.
+
+        Stage 1: Macro-Geometric Screening (HPP/VPP + ORB) — fast fail-fast gate.
+        Stage 2: Siamese ResNet Micro-Stroke Analysis — only runs if Stage 1 passes.
+
+        Args:
+            binary_reference: Binarized reference signature image (numpy, uint8).
+            binary_questioned: Binarized questioned signature image (numpy, uint8).
+            tensor_reference: Preprocessed tensor (1, 3, 224, 224) for ResNet.
+            tensor_questioned: Preprocessed tensor (1, 3, 224, 224) for ResNet.
+
+        Returns:
+            dict containing all pipeline telemetry and verdict fields.
+        """
+        # ── Stage 1: Macro-Geometric Gate ─────────────────────────────────────
+        macro_result = compute_macro_score(binary_reference, binary_questioned)
+        macro_score = macro_result["macro_score"]
+
+        logger.info(
+            "[Stage 1] MacroGeo: composite=%.4f | hpp=%.4f | vpp=%.4f | orb=%.4f | threshold=%.4f",
+            macro_score,
+            macro_result["hpp_corr"],
+            macro_result["vpp_corr"],
+            macro_result["orb_ratio"],
+            self.macro_threshold,
+        )
+
+        if macro_score < self.macro_threshold:
+            # Fail-fast: structural shape mismatch — skip Stage 2 entirely
+            logger.info(
+                "[Stage 1] REJECTED (%.4f < %.4f). Skipping Siamese inference.",
+                macro_score,
+                self.macro_threshold,
+            )
+            # Similarity is mapped from macro_score for display continuity
+            # (kept in cosine-like range by rescaling from [0,1] to [-1,1])
+            equiv_similarity = round(float(macro_score * 2.0 - 1.0), 4)
+            normalized_pct = round(((equiv_similarity + 1.0) / 2.0) * 100.0, 2)
+
+            return {
+                "verdict": VerdictEnum.FORGERY,
+                "status": "FORGERY / NOT IDENTICAL",
+                "similarity_score": equiv_similarity,
+                "normalized_percentage": normalized_pct,
+                "confidence_band": "High Discrepancy" if macro_score < 0.30 else "Moderate Discrepancy",
+                "analysis": (
+                    "Stage 1 Macro-Geometric Screening rejected this pair: structural layout, "
+                    "projection density profiles, and key-point topology are significantly "
+                    "different from the reference specimen — consistent with signatures from "
+                    "different individuals or fundamentally different handwriting styles."
+                ),
+                "macro_score": macro_result["macro_score"],
+                "hpp_corr": macro_result["hpp_corr"],
+                "vpp_corr": macro_result["vpp_corr"],
+                "orb_ratio": macro_result["orb_ratio"],
+                "micro_score": -1.0,
+                "stage_rejected": True,
+                "rejection_stage": "macro",
+            }
+
+        # ── Stage 2: Siamese Micro-Stroke Analysis ────────────────────────────
+        logger.info(
+            "[Stage 1] PASSED (%.4f >= %.4f). Proceeding to Stage 2 Siamese inference.",
+            macro_score,
+            self.macro_threshold,
+        )
+
+        emb_reference = self.extract_embedding(tensor_reference)
+        emb_questioned = self.extract_embedding(tensor_questioned)
+        micro_score = self.compute_similarity(emb_reference, emb_questioned)
+        verdict, status_label, confidence_band, analysis = self.evaluate_verdict(micro_score)
+
+        logger.info(
+            "[Stage 2] MicroStroke: cosine=%.4f | Verdict: %s",
+            micro_score,
+            verdict.value,
+        )
+
+        # Determine rejection_stage for FORGERY at stage 2
+        rejection_stage = None
+        if verdict == VerdictEnum.FORGERY:
+            rejection_stage = "micro"
+
+        normalized_pct = round(((micro_score + 1.0) / 2.0) * 100.0, 2)
+
+        return {
+            "verdict": verdict,
+            "status": status_label,
+            "similarity_score": micro_score,
+            "normalized_percentage": normalized_pct,
+            "confidence_band": confidence_band,
+            "analysis": analysis,
+            "macro_score": macro_result["macro_score"],
+            "hpp_corr": macro_result["hpp_corr"],
+            "vpp_corr": macro_result["vpp_corr"],
+            "orb_ratio": macro_result["orb_ratio"],
+            "micro_score": micro_score,
+            "stage_rejected": False,
+            "rejection_stage": rejection_stage,
+        }
+
     def get_readiness(self) -> dict:
         """Return readiness diagnostic dictionary."""
         return {
@@ -241,6 +364,7 @@ class ModelManager:
             "weights_verified": self.weights_verified,
             "device": str(self.device),
             "calibrated_threshold": self.active_threshold,
+            "macro_geometry_threshold": self.macro_threshold,
             "model_version": self.model_version,
         }
 
