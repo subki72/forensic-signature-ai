@@ -50,6 +50,31 @@ To eliminate legal liability from binary false classifications, the system imple
 
 ---
 
+## 4. Known Limitations & Model Scope
+
+### Intended Use Case (In-Distribution)
+This system is designed and calibrated for **same-signer verification**: given a known genuine reference specimen of signer X, determine whether a questioned document was signed by the same signer X or is a **skilled forgery attempting to imitate signer X**.
+
+| Task | Performance |
+|---|:---:|
+| Genuine (signer X) vs. Skilled Forgery of signer X | ✅ ROC-AUC 0.89 |
+| Genuine specimen A vs. Genuine specimen B (same signer) | ✅ High Similarity |
+| Genuine signer X vs. Entirely different person (signer Y) | ⚠️ Not calibrated |
+
+### Out-of-Distribution Behavior
+The model was trained with **triplet loss** using:
+- **Positive pairs**: Two genuine specimens from the same signer
+- **Negative pairs**: Skilled forgeries of that same signer's signature
+
+It was **not** trained on cross-signer negative pairs (e.g., "Saniya" vs. "Preethi"). As a result, two fluent handwriting samples from completely different people may produce a high cosine similarity score because both are recognized as "authentic human handwriting" in the embedding space — a known phenomenon called **intra-class generalization collapse**.
+
+### Mitigation for Future Versions
+- Add cross-signer hard negatives to the triplet mining strategy
+- Incorporate per-signer enrollment normalization (1-shot calibration)
+- Expand training to SigNet-F dataset which includes more inter-class negative examples
+
+---
+
 ## 4. Repository Structure
 
 ```text
