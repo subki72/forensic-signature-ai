@@ -25,8 +25,16 @@ from api.macro_geometry import compute_macro_score
 from api.schemas import VerdictEnum
 
 # Stage 1 gate threshold: pairs scoring below this are immediately FORGERY
-# (structural shape mismatch -- different writers or blatantly different forms)
-MACRO_GEOMETRY_THRESHOLD: float = 0.50
+# (structural shape mismatch -- different writers or blatantly different forms).
+#
+# Calibration notes:
+#   - Same-person genuine signatures (bbox-cropped): typically 0.55 - 0.90
+#   - Different-person (cross-signer) pairs:         typically 0.05 - 0.35
+#   - Threshold 0.38 gives a comfortable separation margin between the two groups.
+#   - Previously 0.50 caused false-FORGERY when images had different paper/framing;
+#     bbox-cropping before Stage 1 + lowered threshold resolves this.
+MACRO_GEOMETRY_THRESHOLD: float = 0.38
+
 
 
 class SiameseNetwork(torch.nn.Module):
