@@ -140,7 +140,7 @@ function App() {
       </main>
 
       <footer className="footer">
-        Powered by Two-Phase Forensic Pipeline V2.3 — Stage 1: MacroGeo (HPP/VPP + ORB) · Stage 2: Siamese ResNet-18
+        Powered by Two-Phase Forensic Pipeline V2.3 — Stage 1: MacroGeo (IoU + Hu Moments + NCC) · Stage 2: Siamese ResNet-18
       </footer>
     </div>
   );

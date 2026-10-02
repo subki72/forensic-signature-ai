@@ -20,7 +20,7 @@ class Settings(BaseSettings):
 
     # Project metadata
     PROJECT_NAME: str = "Legal Document AI - Forensic Signature Verification"
-    VERSION: str = "2.2.0"
+    VERSION: str = "2.3.1"
     ENVIRONMENT: str = "development"
     DEBUG: bool = False
 

@@ -27,7 +27,7 @@ export function TelemetryHeader({ apiStatus }) {
               apiStatus.ready ? 'telemetry-online' : 'telemetry-degraded'
             }`}
           />
-          {apiStatus.ready ? 'ENGINE: READY (V2.1)' : 'ENGINE: DEGRADED'}
+          {apiStatus.ready ? 'ENGINE: READY (V2.3)' : 'ENGINE: DEGRADED'}
         </div>
       </div>
 
