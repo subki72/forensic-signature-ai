@@ -1,22 +1,27 @@
 """Macro-Geometric Screening Pipeline (Stage 1 of 2-Phase Verification).
 
-Performs fast, deterministic geometric analysis of two binary signature images
-using Projection Profile Correlation and ORB Keypoint Matching. This acts as
-a fail-fast gate BEFORE the computationally expensive Siamese ResNet (Stage 2).
+Performs fast, deterministic shape analysis of two NORMALIZED 224x224
+signature images using direct 2D spatial comparison methods. Acts as a
+fail-fast gate BEFORE the Siamese ResNet (Stage 2).
 
-Design Rationale:
-- Two signatures from completely different people (e.g., "Saniya" vs "Preethi")
-  will be REJECTED here, within milliseconds, because their structural layout
-  and projection density profiles are fundamentally different.
-- Only signatures that pass the geometry gate proceed to the deep learning stage.
+CRITICAL DESIGN: Inputs must be the padded, centered, 224x224 single-channel
+binary images (from pad_and_resize). This ensures both signatures are:
+  1. Cropped to bounding box  (paper noise removed)
+  2. Aspect-ratio padded      (no shape distortion)
+  3. Resized to 224x224       (same scale for pixel comparison)
+  4. Centered on canvas       (aligned for overlap measurement)
 
-Algorithms:
-1. Horizontal & Vertical Projection Profile (HPP/VPP) Correlation:
-   - Projects ink density along each axis to capture overall shape rhythm.
-   - Uses Pearson-like cosine correlation between the two 1D profiles.
-2. ORB (Oriented FAST and Rotated BRIEF) Keypoint Match Ratio:
-   - Detects distinctive stroke intersections and curvature anchors.
-   - Measures the fraction of matched keypoints using BFMatcher + ratio test.
+Previous HPP/VPP approach FAILED because:
+  - 1D projection profiles are NOT shape-discriminative.
+  - Two completely different signatures with similar horizontal extent
+    produce near-identical VPP profiles (e.g., VPP corr was 93.2% for
+    two visually distinct signatures).
+  - Projection profiles measure ink DISTRIBUTION, not ink SHAPE.
+
+Current approach uses three 2D shape-aware metrics:
+  1. Pixel IoU        — directly measures stroke pixel overlap
+  2. Hu Moments       — rotation/scale invariant shape topology comparison
+  3. Pixel Correlation — 2D normalized cross-correlation of the full image
 """
 
 import cv2
@@ -25,143 +30,169 @@ import numpy as np
 from api.logging_config import logger
 
 
-def _extract_projection_profiles(binary: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Compute horizontal and vertical ink density projection profiles.
+def _compute_pixel_iou(bin_a: np.ndarray, bin_b: np.ndarray) -> float:
+    """Compute Intersection over Union of foreground (stroke) pixels.
+
+    This is the most direct measure of whether two signatures share the same
+    physical stroke positions on the canvas. For two different people's
+    signatures (different letterforms in different positions), IoU will be
+    very low (typically 0.02-0.10). For same-person genuine pairs with
+    natural variation, IoU is moderate (typically 0.15-0.40).
 
     Args:
-        binary: Binary image with white ink strokes on black background (uint8).
+        bin_a: First binary image (0 or 255, uint8).
+        bin_b: Second binary image (0 or 255, uint8).
 
     Returns:
-        Tuple of (hpp, vpp) — 1D float32 arrays normalized to [0.0, 1.0].
+        IoU score in [0.0, 1.0].
     """
-    # Horizontal Projection Profile (HPP): sum ink pixels per row
-    hpp = binary.sum(axis=1).astype(np.float32)
-    # Vertical Projection Profile (VPP): sum ink pixels per column
-    vpp = binary.sum(axis=0).astype(np.float32)
+    bool_a = bin_a > 0
+    bool_b = bin_b > 0
 
-    # Normalize to [0, 1] to remove scale bias from image size differences
-    hpp_max = hpp.max()
-    vpp_max = vpp.max()
-    if hpp_max > 0:
-        hpp /= hpp_max
-    if vpp_max > 0:
-        vpp /= vpp_max
+    intersection = np.logical_and(bool_a, bool_b).sum()
+    union = np.logical_or(bool_a, bool_b).sum()
 
-    return hpp, vpp
-
-
-def _cosine_correlation_1d(a: np.ndarray, b: np.ndarray) -> float:
-    """Compute cosine similarity between two 1D arrays after resampling to equal length.
-
-    Args:
-        a: First profile array.
-        b: Second profile array.
-
-    Returns:
-        Cosine similarity in range [0.0, 1.0] (clamped; negative treated as 0).
-    """
-    target_len = max(len(a), len(b))
-    if target_len == 0:
+    if union == 0:
         return 0.0
 
-    # Resample both profiles to the same length for direct comparison
-    a_resized = cv2.resize(a.reshape(-1, 1), (1, target_len), interpolation=cv2.INTER_LINEAR).flatten()
-    b_resized = cv2.resize(b.reshape(-1, 1), (1, target_len), interpolation=cv2.INTER_LINEAR).flatten()
+    return float(intersection / union)
 
-    norm_a = np.linalg.norm(a_resized)
-    norm_b = np.linalg.norm(b_resized)
+
+def _compute_hu_similarity(bin_a: np.ndarray, bin_b: np.ndarray) -> float:
+    """Compute shape similarity using Hu Moments on the stroke contours.
+
+    Hu Moments are seven invariant moments that characterize shape topology
+    independent of translation, rotation, and scale. Two fundamentally
+    different signature shapes (e.g., "SJ" vs "ew") will have very different
+    Hu moment vectors.
+
+    Uses cosine similarity on log-transformed Hu moments for numerical
+    stability (Hu moments span many orders of magnitude).
+
+    Args:
+        bin_a: First binary image (0 or 255, uint8).
+        bin_b: Second binary image (0 or 255, uint8).
+
+    Returns:
+        Similarity score in [0.0, 1.0].
+    """
+    moments_a = cv2.moments(bin_a)
+    moments_b = cv2.moments(bin_b)
+
+    # Guard: if either image has no mass, shapes are incomparable
+    if moments_a["m00"] == 0 or moments_b["m00"] == 0:
+        return 0.0
+
+    hu_a = cv2.HuMoments(moments_a).flatten()
+    hu_b = cv2.HuMoments(moments_b).flatten()
+
+    # Log-transform for numerical stability (moments span 10^-1 to 10^-15)
+    # Use sign-preserving log: -sign(h) * log10(|h|)
+    eps = 1e-12
+    log_hu_a = -np.sign(hu_a) * np.log10(np.abs(hu_a) + eps)
+    log_hu_b = -np.sign(hu_b) * np.log10(np.abs(hu_b) + eps)
+
+    # Cosine similarity of the log-transformed Hu vectors
+    norm_a = np.linalg.norm(log_hu_a)
+    norm_b = np.linalg.norm(log_hu_b)
 
     if norm_a == 0 or norm_b == 0:
         return 0.0
 
-    cosine_sim = float(np.dot(a_resized, b_resized) / (norm_a * norm_b))
-    return max(0.0, cosine_sim)  # Clamp negative cosines to 0
+    cosine = float(np.dot(log_hu_a, log_hu_b) / (norm_a * norm_b))
+    return max(0.0, cosine)  # Clamp negatives to 0
 
 
-def _orb_match_ratio(binary_a: np.ndarray, binary_b: np.ndarray) -> float:
-    """Compute ORB keypoint match ratio between two binary images.
+def _compute_pixel_correlation(img_a: np.ndarray, img_b: np.ndarray) -> float:
+    """Compute 2D Normalized Cross-Correlation between two images.
 
-    Uses Lowe's ratio test (threshold 0.75) to filter out ambiguous matches.
-    Returns the ratio of good inlier matches to the maximum number of keypoints
-    detected in either image.
+    Unlike 1D projection profiles, this compares the FULL 2D pixel pattern.
+    Mean-subtraction ensures the metric is not dominated by the shared black
+    background — it measures how well the stroke PATTERNS align.
+
+    For two sparse binary images where strokes are in different locations,
+    the cross-correlation will be low because white pixels don't coincide
+    with white pixels in the other image.
 
     Args:
-        binary_a: First binary signature image.
-        binary_b: Second binary signature image.
+        img_a: First image (uint8, same dimensions as img_b).
+        img_b: Second image (uint8, same dimensions as img_b).
 
     Returns:
-        Match ratio in range [0.0, 1.0]. Returns 0.0 if too few keypoints.
+        Correlation coefficient in [0.0, 1.0] (negatives clamped to 0).
     """
-    orb = cv2.ORB_create(nfeatures=500)
-    kp_a, des_a = orb.detectAndCompute(binary_a, None)
-    kp_b, des_b = orb.detectAndCompute(binary_b, None)
+    a = img_a.astype(np.float32)
+    b = img_b.astype(np.float32)
 
-    # Guard: too few keypoints to make a meaningful comparison
-    if des_a is None or des_b is None or len(kp_a) < 5 or len(kp_b) < 5:
-        logger.debug("ORB: insufficient keypoints (%d vs %d). Returning 0.0.", len(kp_a), len(kp_b))
+    a_centered = a - a.mean()
+    b_centered = b - b.mean()
+
+    norm_a = np.linalg.norm(a_centered)
+    norm_b = np.linalg.norm(b_centered)
+
+    if norm_a == 0 or norm_b == 0:
         return 0.0
 
-    # Brute-Force Matcher with Hamming distance for binary ORB descriptors
-    bf = cv2.BFMatcher(cv2.NORM_HAMMING)
-    try:
-        matches = bf.knnMatch(des_a, des_b, k=2)
-    except cv2.error:
-        return 0.0
-
-    # Lowe's ratio test: keep only unambiguous, discriminative matches
-    good_matches = []
-    for match_pair in matches:
-        if len(match_pair) == 2:
-            m, n = match_pair
-            if m.distance < 0.75 * n.distance:
-                good_matches.append(m)
-
-    max_kp = max(len(kp_a), len(kp_b))
-    ratio = len(good_matches) / max_kp if max_kp > 0 else 0.0
-    return float(min(ratio, 1.0))
+    ncc = float(np.sum(a_centered * b_centered) / (norm_a * norm_b))
+    return max(0.0, ncc)
 
 
-def compute_macro_score(binary_a: np.ndarray, binary_b: np.ndarray) -> dict:
-    """Compute composite macro-geometric similarity score between two signature images.
+def compute_macro_score(padded_a: np.ndarray, padded_b: np.ndarray) -> dict:
+    """Compute composite macro-geometric similarity using 2D shape comparison.
 
-    Combines:
-    - HPP cosine correlation (weight 40%): vertical layout rhythm
-    - VPP cosine correlation (weight 40%): horizontal stroke distribution
-    - ORB keypoint match ratio (weight 20%): structural anchor point overlap
+    INPUTS MUST BE the 224x224 single-channel padded images from pad_and_resize
+    (extract via rgb_output[:, :, 0]). Both signatures are already cropped,
+    aspect-ratio padded, and centered at the same scale.
+
+    Combines three complementary shape metrics:
+      - Pixel IoU        (50%): Direct stroke pixel overlap. Most discriminative
+                                for sparse binary images because it ignores the
+                                shared background entirely.
+      - Hu Moments       (25%): Topological shape invariants. Captures whether
+                                the overall contour "shape family" matches.
+      - Pixel Correlation (25%): Full 2D pattern correlation. Captures spatial
+                                arrangement of ink density.
 
     Args:
-        binary_a: Binary image of reference signature (white ink on black).
-        binary_b: Binary image of questioned signature (white ink on black).
+        padded_a: 224x224 uint8 single-channel padded image (reference).
+        padded_b: 224x224 uint8 single-channel padded image (questioned).
 
     Returns:
         Dictionary with:
-            'macro_score' (float): Weighted composite score in [0.0, 1.0].
-            'hpp_corr' (float): Horizontal projection profile correlation.
-            'vpp_corr' (float): Vertical projection profile correlation.
-            'orb_ratio' (float): ORB inlier match ratio.
+            'macro_score'   (float): Weighted composite [0.0–1.0].
+            'pixel_iou'     (float): Stroke pixel IoU [0.0–1.0].
+            'hu_similarity' (float): Hu Moments cosine similarity [0.0–1.0].
+            'pixel_corr'    (float): Normalized cross-correlation [0.0–1.0].
     """
-    hpp_a, vpp_a = _extract_projection_profiles(binary_a)
-    hpp_b, vpp_b = _extract_projection_profiles(binary_b)
+    # Re-binarize: INTER_AREA resize may have introduced anti-aliasing
+    _, bin_a = cv2.threshold(padded_a, 127, 255, cv2.THRESH_BINARY)
+    _, bin_b = cv2.threshold(padded_b, 127, 255, cv2.THRESH_BINARY)
 
-    hpp_corr = _cosine_correlation_1d(hpp_a, hpp_b)
-    vpp_corr = _cosine_correlation_1d(vpp_a, vpp_b)
-    orb_ratio = _orb_match_ratio(binary_a, binary_b)
+    # ── Metric 1: Pixel IoU (50%) ──────────────────────────────────────────
+    pixel_iou = _compute_pixel_iou(bin_a, bin_b)
 
-    # Weighted composite: projection profiles are the primary signal,
-    # ORB provides a local structure cross-check.
-    macro_score = (0.40 * hpp_corr) + (0.40 * vpp_corr) + (0.20 * orb_ratio)
+    # ── Metric 2: Hu Moments shape similarity (25%) ────────────────────────
+    hu_similarity = _compute_hu_similarity(bin_a, bin_b)
+
+    # ── Metric 3: 2D Normalized Cross-Correlation (25%) ────────────────────
+    pixel_corr = _compute_pixel_correlation(padded_a, padded_b)
+
+    # ── Weighted Composite ─────────────────────────────────────────────────
+    # IoU is weighted highest because it is the most discriminative metric
+    # for sparse binary images (ignores the dominant shared background).
+    macro_score = (0.50 * pixel_iou) + (0.25 * hu_similarity) + (0.25 * pixel_corr)
 
     logger.debug(
-        "MacroGeometry: HPP=%.4f | VPP=%.4f | ORB=%.4f | Composite=%.4f",
-        hpp_corr,
-        vpp_corr,
-        orb_ratio,
+        "MacroGeometry: IoU=%.4f | Hu=%.4f | NCC=%.4f | Composite=%.4f",
+        pixel_iou,
+        hu_similarity,
+        pixel_corr,
         macro_score,
     )
 
     return {
         "macro_score": round(float(macro_score), 4),
-        "hpp_corr": round(float(hpp_corr), 4),
-        "vpp_corr": round(float(vpp_corr), 4),
-        "orb_ratio": round(float(orb_ratio), 4),
+        "pixel_iou": round(float(pixel_iou), 4),
+        "hu_similarity": round(float(hu_similarity), 4),
+        "pixel_corr": round(float(pixel_corr), 4),
     }

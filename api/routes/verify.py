@@ -2,9 +2,10 @@
 strict validation, and rate limiting.
 
 Pipeline:
-  Stage 1 (fast, < 10ms): Macro-Geometric Screening via HPP/VPP + ORB.
-                          Input: bbox-CROPPED binary (paper background stripped).
+  Stage 1 (fast, < 15ms): Macro-Geometric Screening via IoU + Hu Moments + NCC.
+                          Input: padded, centered, 224x224 single-channel binary.
   Stage 2 (deep, ~80ms):  Siamese ResNet micro-stroke kinematic analysis.
+                          Input: ImageNet-normalized 224x224 tensor.
                           Only runs when Stage 1 passes.
 """
 
@@ -64,70 +65,49 @@ def _validate_image_bytes(data: bytes, filename: str) -> None:
         )
 
 
-def _crop_to_signature(binary, bbox, padding: int = 10):
-    """Crop a binary image to the signature bounding box + padding.
-
-    Purpose: Stage 1 (HPP/VPP projection profiles + ORB) should compare ONLY
-    the ink strokes, not the surrounding paper. Without cropping, ruled-paper
-    lines, different page margins, and different photo framing corrupt the
-    projection profiles and cause false-FORGERY on genuine same-person
-    signatures taken from different papers or at different zoom levels.
-
-    Args:
-        binary: Full-frame binary uint8 image (white ink on black background).
-        bbox: (x, y, w, h) tuple from extract_contour_bbox, or None.
-        padding: Extra pixels to retain around the signature region.
-
-    Returns:
-        Cropped binary image, or original image if bbox is None.
-    """
-    if bbox is None:
-        return binary
-
-    h, w = binary.shape[:2]
-    x, y, bw, bh = bbox
-    x1 = max(0, x - padding)
-    y1 = max(0, y - padding)
-    x2 = min(w, x + bw + padding)
-    y2 = min(h, y + bh + padding)
-    cropped = binary[y1:y2, x1:x2]
-
-    # Guard: degenerate crop falls back to original
-    if cropped.size == 0:
-        return binary
-    return cropped
-
-
 def _run_two_phase_pipeline(raw_reference: bytes, raw_questioned: bytes) -> dict:
     """CPU-bound worker executing the complete 2-phase forensic pipeline.
 
     Executes in a threadpool worker to avoid starving the asyncio event loop.
 
-    Stage 1 receives bbox-CROPPED binary images (paper/background stripped).
-    Stage 2 receives padded 224x224 tensors (standard Siamese preprocessing).
+    PREPROCESSING (critical for accuracy):
+      pad_and_resize() outputs a 224x224x3 RGB image where:
+        1. The signature is cropped to its bounding box
+        2. Padded to a 1:1 square (aspect-ratio preserved)
+        3. Resized to 224x224 with INTER_AREA interpolation
+        4. Centered on the canvas
+
+      For Stage 1: We extract the single channel ([:, :, 0]) to get a 224x224
+      grayscale image where both signatures are at the same scale, position,
+      and canvas size. This is ESSENTIAL for IoU (pixel overlap) to work —
+      without normalization, two photos of the same signature at different
+      zoom levels would have zero overlap.
+
+      For Stage 2: We apply ImageNet normalization to the RGB output to
+      produce the standard Siamese ResNet input tensor.
 
     Returns a dict with all verdict + telemetry fields.
     """
-    # Decode + preprocess reference
+    # -- Reference image preprocessing ----------------------------------------
     img_ref = decode_image(raw_reference)
     binary_ref = isolate_ink_strokes(img_ref)
     bbox_ref = extract_contour_bbox(binary_ref)
-    binary_ref_for_stage1 = _crop_to_signature(binary_ref, bbox_ref)   # <-- Stage 1
     rgb_ref = pad_and_resize(binary_ref, bbox=bbox_ref, target_size=224)
-    tensor_ref = normalize_image_to_tensor(rgb_ref)                     # <-- Stage 2
+    padded_ref = rgb_ref[:, :, 0]                     # 224x224 single-channel for Stage 1
+    tensor_ref = normalize_image_to_tensor(rgb_ref)    # (1, 3, 224, 224) for Stage 2
 
-    # Decode + preprocess questioned
+    # -- Questioned image preprocessing ----------------------------------------
     img_que = decode_image(raw_questioned)
     binary_que = isolate_ink_strokes(img_que)
     bbox_que = extract_contour_bbox(binary_que)
-    binary_que_for_stage1 = _crop_to_signature(binary_que, bbox_que)    # <-- Stage 1
     rgb_que = pad_and_resize(binary_que, bbox=bbox_que, target_size=224)
-    tensor_que = normalize_image_to_tensor(rgb_que)                     # <-- Stage 2
+    padded_que = rgb_que[:, :, 0]                      # 224x224 single-channel for Stage 1
+    tensor_que = normalize_image_to_tensor(rgb_que)     # (1, 3, 224, 224) for Stage 2
 
-    # Execute 2-phase pipeline
+    # -- Execute 2-phase pipeline ----------------------------------------------
     return model_manager.run_two_stage_pipeline(
-        binary_reference=binary_ref_for_stage1,
-        binary_questioned=binary_que_for_stage1,
+        padded_reference=padded_ref,
+        padded_questioned=padded_que,
         tensor_reference=tensor_ref,
         tensor_questioned=tensor_que,
     )
@@ -147,7 +127,7 @@ def _run_two_phase_pipeline(raw_reference: bytes, raw_questioned: bytes) -> dict
     summary="Verify Signature Authenticity (Two-Phase Pipeline)",
     description=(
         "Runs a 2-phase forensic verification: "
-        "Stage 1 rejects cross-signer pairs via macro-geometric screening (HPP/VPP + ORB). "
+        "Stage 1 rejects cross-signer pairs via macro-geometric screening (IoU + Hu Moments + NCC). "
         "Stage 2 detects skilled forgeries via Siamese ResNet micro-stroke analysis."
     ),
 )
@@ -222,9 +202,9 @@ async def verify_signature(
         latency_ms=elapsed_ms,
         # Two-phase telemetry
         macro_score=pipeline_result["macro_score"],
-        hpp_corr=pipeline_result["hpp_corr"],
-        vpp_corr=pipeline_result["vpp_corr"],
-        orb_ratio=pipeline_result["orb_ratio"],
+        pixel_iou=pipeline_result["pixel_iou"],
+        hu_similarity=pipeline_result["hu_similarity"],
+        pixel_corr=pipeline_result["pixel_corr"],
         micro_score=pipeline_result["micro_score"],
         stage_rejected=pipeline_result["stage_rejected"],
         rejection_stage=pipeline_result["rejection_stage"],

@@ -24,16 +24,16 @@ from api.logging_config import logger
 from api.macro_geometry import compute_macro_score
 from api.schemas import VerdictEnum
 
-# Stage 1 gate threshold: pairs scoring below this are immediately FORGERY
-# (structural shape mismatch -- different writers or blatantly different forms).
+# Stage 1 gate threshold: pairs scoring below this are immediately FORGERY.
 #
-# Calibration notes:
-#   - Same-person genuine signatures (bbox-cropped): typically 0.55 - 0.90
-#   - Different-person (cross-signer) pairs:         typically 0.05 - 0.35
-#   - Threshold 0.38 gives a comfortable separation margin between the two groups.
-#   - Previously 0.50 caused false-FORGERY when images had different paper/framing;
-#     bbox-cropping before Stage 1 + lowered threshold resolves this.
-MACRO_GEOMETRY_THRESHOLD: float = 0.38
+# Metrics: Pixel IoU (50%) + Hu Moments (25%) + Pixel Correlation (25%)
+# on 224x224 padded/centered binary images.
+#
+# Calibration:
+#   - Same-person genuine pairs (padded 224x224): IoU ~0.15-0.40, composite ~0.30-0.55
+#   - Cross-signer different people:               IoU ~0.02-0.10, composite ~0.05-0.18
+#   - Threshold 0.25 provides good separation between the two distributions.
+MACRO_GEOMETRY_THRESHOLD: float = 0.25
 
 
 
@@ -257,47 +257,48 @@ class ModelManager:
 
     def run_two_stage_pipeline(
         self,
-        binary_reference: np.ndarray,
-        binary_questioned: np.ndarray,
+        padded_reference: np.ndarray,
+        padded_questioned: np.ndarray,
         tensor_reference: torch.Tensor,
         tensor_questioned: torch.Tensor,
     ) -> dict:
         """Execute the 2-phase forensic verification pipeline.
 
-        Stage 1: Macro-Geometric Screening (HPP/VPP + ORB) — fast fail-fast gate.
-        Stage 2: Siamese ResNet Micro-Stroke Analysis — only runs if Stage 1 passes.
+        Stage 1: Macro-Geometric Screening (IoU + Hu Moments + NCC).
+                 Operates on 224x224 padded/centered single-channel images.
+                 Rejects cross-signer pairs by detecting shape mismatches.
+        Stage 2: Siamese ResNet Micro-Stroke Analysis.
+                 Only runs if Stage 1 passes. Detects skilled forgeries.
 
         Args:
-            binary_reference: Binarized reference signature image (numpy, uint8).
-            binary_questioned: Binarized questioned signature image (numpy, uint8).
+            padded_reference: 224x224 uint8 single-channel padded image (reference).
+            padded_questioned: 224x224 uint8 single-channel padded image (questioned).
             tensor_reference: Preprocessed tensor (1, 3, 224, 224) for ResNet.
             tensor_questioned: Preprocessed tensor (1, 3, 224, 224) for ResNet.
 
         Returns:
             dict containing all pipeline telemetry and verdict fields.
         """
-        # ── Stage 1: Macro-Geometric Gate ─────────────────────────────────────
-        macro_result = compute_macro_score(binary_reference, binary_questioned)
+        # -- Stage 1: Macro-Geometric Gate (IoU + Hu + NCC) --------------------
+        macro_result = compute_macro_score(padded_reference, padded_questioned)
         macro_score = macro_result["macro_score"]
 
         logger.info(
-            "[Stage 1] MacroGeo: composite=%.4f | hpp=%.4f | vpp=%.4f | orb=%.4f | threshold=%.4f",
+            "[Stage 1] MacroGeo: composite=%.4f | IoU=%.4f | Hu=%.4f | NCC=%.4f | threshold=%.4f",
             macro_score,
-            macro_result["hpp_corr"],
-            macro_result["vpp_corr"],
-            macro_result["orb_ratio"],
+            macro_result["pixel_iou"],
+            macro_result["hu_similarity"],
+            macro_result["pixel_corr"],
             self.macro_threshold,
         )
 
         if macro_score < self.macro_threshold:
-            # Fail-fast: structural shape mismatch — skip Stage 2 entirely
+            # Fail-fast: shape mismatch -- skip Stage 2 entirely
             logger.info(
                 "[Stage 1] REJECTED (%.4f < %.4f). Skipping Siamese inference.",
                 macro_score,
                 self.macro_threshold,
             )
-            # Similarity is mapped from macro_score for display continuity
-            # (kept in cosine-like range by rescaling from [0,1] to [-1,1])
             equiv_similarity = round(float(macro_score * 2.0 - 1.0), 4)
             normalized_pct = round(((equiv_similarity + 1.0) / 2.0) * 100.0, 2)
 
@@ -306,23 +307,23 @@ class ModelManager:
                 "status": "FORGERY / NOT IDENTICAL",
                 "similarity_score": equiv_similarity,
                 "normalized_percentage": normalized_pct,
-                "confidence_band": "High Discrepancy" if macro_score < 0.30 else "Moderate Discrepancy",
+                "confidence_band": "High Discrepancy" if macro_score < 0.15 else "Moderate Discrepancy",
                 "analysis": (
-                    "Stage 1 Macro-Geometric Screening rejected this pair: structural layout, "
-                    "projection density profiles, and key-point topology are significantly "
-                    "different from the reference specimen — consistent with signatures from "
-                    "different individuals or fundamentally different handwriting styles."
+                    "Stage 1 Macro-Geometric Screening rejected this pair: stroke pixel overlap "
+                    "(IoU), contour shape topology (Hu Moments), and 2D spatial pattern correlation "
+                    "are significantly different from the reference specimen -- consistent with "
+                    "signatures from different individuals."
                 ),
                 "macro_score": macro_result["macro_score"],
-                "hpp_corr": macro_result["hpp_corr"],
-                "vpp_corr": macro_result["vpp_corr"],
-                "orb_ratio": macro_result["orb_ratio"],
+                "pixel_iou": macro_result["pixel_iou"],
+                "hu_similarity": macro_result["hu_similarity"],
+                "pixel_corr": macro_result["pixel_corr"],
                 "micro_score": -1.0,
                 "stage_rejected": True,
                 "rejection_stage": "macro",
             }
 
-        # ── Stage 2: Siamese Micro-Stroke Analysis ────────────────────────────
+        # -- Stage 2: Siamese Micro-Stroke Analysis ----------------------------
         logger.info(
             "[Stage 1] PASSED (%.4f >= %.4f). Proceeding to Stage 2 Siamese inference.",
             macro_score,
@@ -340,7 +341,6 @@ class ModelManager:
             verdict.value,
         )
 
-        # Determine rejection_stage for FORGERY at stage 2
         rejection_stage = None
         if verdict == VerdictEnum.FORGERY:
             rejection_stage = "micro"
@@ -355,9 +355,9 @@ class ModelManager:
             "confidence_band": confidence_band,
             "analysis": analysis,
             "macro_score": macro_result["macro_score"],
-            "hpp_corr": macro_result["hpp_corr"],
-            "vpp_corr": macro_result["vpp_corr"],
-            "orb_ratio": macro_result["orb_ratio"],
+            "pixel_iou": macro_result["pixel_iou"],
+            "hu_similarity": macro_result["hu_similarity"],
+            "pixel_corr": macro_result["pixel_corr"],
             "micro_score": micro_score,
             "stage_rejected": False,
             "rejection_stage": rejection_stage,

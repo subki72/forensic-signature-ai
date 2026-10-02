@@ -3,7 +3,7 @@
 Provides explicit request and response models for verification,
 health monitoring, and error handling.
 
-Version: 2.3.0 -- Two-Phase Verification Pipeline.
+Version: 2.3.1 -- Two-Phase Pipeline with IoU/Hu/NCC Stage 1 metrics.
 """
 
 from enum import Enum
@@ -78,32 +78,41 @@ class VerificationResult(BaseModel):
         ...,
         description=(
             "Stage 1 (Macro-Geometric) composite score [0.0-1.0]. "
-            "Weighted composite of HPP correlation, VPP correlation, and ORB inlier ratio."
+            "Weighted: 50% Pixel IoU + 25% Hu Moments + 25% Pixel Correlation."
         ),
         ge=0.0,
         le=1.0,
-        example=0.82,
+        example=0.42,
     )
-    hpp_corr: float = Field(
+    pixel_iou: float = Field(
         ...,
-        description="Horizontal Projection Profile cosine correlation [0.0-1.0].",
+        description=(
+            "Intersection over Union of foreground stroke pixels on the "
+            "224x224 padded canvas [0.0-1.0]. Primary Stage 1 discriminator."
+        ),
         ge=0.0,
         le=1.0,
-        example=0.78,
+        example=0.28,
     )
-    vpp_corr: float = Field(
+    hu_similarity: float = Field(
         ...,
-        description="Vertical Projection Profile cosine correlation [0.0-1.0].",
+        description=(
+            "Cosine similarity of log-transformed Hu Moments between the two "
+            "signature contours [0.0-1.0]. Shape topology invariant."
+        ),
         ge=0.0,
         le=1.0,
-        example=0.85,
+        example=0.65,
     )
-    orb_ratio: float = Field(
+    pixel_corr: float = Field(
         ...,
-        description="ORB keypoint Lowe's ratio-test inlier match ratio [0.0-1.0].",
+        description=(
+            "2D Normalized Cross-Correlation of pixel intensities [0.0-1.0]. "
+            "Measures spatial pattern alignment after mean subtraction."
+        ),
         ge=0.0,
         le=1.0,
-        example=0.22,
+        example=0.55,
     )
     micro_score: float = Field(
         ...,
@@ -141,7 +150,7 @@ class HealthResponse(BaseModel):
     """Liveness probe response model for GET /health."""
 
     status: str = Field(default="healthy", example="healthy")
-    version: str = Field(default="2.3.0", example="2.3.0")
+    version: str = Field(default="2.3.1", example="2.3.1")
     environment: str = Field(default="production", example="production")
     service: str = Field(
         default="Forensic Signature Verification API",
@@ -158,7 +167,7 @@ class ReadinessResponse(BaseModel):
     weights_verified: bool = Field(..., description="Whether weights passed integrity validation.")
     device: str = Field(default="cpu", example="cpu")
     calibrated_threshold: float = Field(..., description="Active decision threshold in use.")
-    model_version: str = Field(default="v2.1", example="v2.1")
+    model_version: str = Field(default="v2.3", example="v2.3")
 
 
 class ErrorResponse(BaseModel):

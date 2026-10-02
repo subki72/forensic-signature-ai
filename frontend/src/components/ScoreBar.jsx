@@ -95,7 +95,7 @@ export function ScoreBar({ result }) {
           {/* Stage 1 */}
           <div style={{ gridColumn: '1 / -1' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '0.4rem' }}>
-              {result.macro_score >= 0.50 ? (
+              {result.macro_score >= 0.25 ? (
                 <ShieldCheck size={13} style={{ color: '#7a9e7e' }} />
               ) : (
                 <ShieldAlert size={13} style={{ color: '#b85c5c' }} />
@@ -108,11 +108,11 @@ export function ScoreBar({ result }) {
                   marginLeft: 'auto',
                   fontSize: '0.75rem',
                   fontWeight: 700,
-                  color: result.macro_score >= 0.50 ? '#7a9e7e' : '#b85c5c',
+                  color: result.macro_score >= 0.25 ? '#7a9e7e' : '#b85c5c',
                 }}
               >
                 {(result.macro_score * 100).toFixed(1)}%
-                {result.macro_score >= 0.50 ? ' ✓ Passed' : ' ✗ Rejected'}
+                {result.macro_score >= 0.25 ? ' ✓ Passed' : ' ✗ Rejected'}
               </span>
             </div>
 
@@ -122,7 +122,7 @@ export function ScoreBar({ result }) {
                 className="progress-fill"
                 style={{
                   width: `${Math.min(100, result.macro_score * 100)}%`,
-                  background: result.macro_score >= 0.50
+                  background: result.macro_score >= 0.25
                     ? 'linear-gradient(90deg, #7a9e7e, #a3c4a7)'
                     : 'linear-gradient(90deg, #b85c5c, #d48a8a)',
                 }}
@@ -132,16 +132,16 @@ export function ScoreBar({ result }) {
             {/* Sub-metrics grid */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.4rem', fontSize: '0.72rem' }}>
               <div style={{ textAlign: 'center', padding: '0.3rem', background: 'rgba(255,255,255,0.04)', borderRadius: '6px' }}>
-                <div style={{ color: 'var(--color-text-secondary)', marginBottom: '2px' }}>HPP Corr</div>
-                <div style={{ fontWeight: 700 }}>{(result.hpp_corr * 100).toFixed(1)}%</div>
+                <div style={{ color: 'var(--color-text-secondary)', marginBottom: '2px' }}>Pixel IoU</div>
+                <div style={{ fontWeight: 700 }}>{(result.pixel_iou * 100).toFixed(1)}%</div>
               </div>
               <div style={{ textAlign: 'center', padding: '0.3rem', background: 'rgba(255,255,255,0.04)', borderRadius: '6px' }}>
-                <div style={{ color: 'var(--color-text-secondary)', marginBottom: '2px' }}>VPP Corr</div>
-                <div style={{ fontWeight: 700 }}>{(result.vpp_corr * 100).toFixed(1)}%</div>
+                <div style={{ color: 'var(--color-text-secondary)', marginBottom: '2px' }}>Hu Moments</div>
+                <div style={{ fontWeight: 700 }}>{(result.hu_similarity * 100).toFixed(1)}%</div>
               </div>
               <div style={{ textAlign: 'center', padding: '0.3rem', background: 'rgba(255,255,255,0.04)', borderRadius: '6px' }}>
-                <div style={{ color: 'var(--color-text-secondary)', marginBottom: '2px' }}>ORB Match</div>
-                <div style={{ fontWeight: 700 }}>{(result.orb_ratio * 100).toFixed(1)}%</div>
+                <div style={{ color: 'var(--color-text-secondary)', marginBottom: '2px' }}>Pixel NCC</div>
+                <div style={{ fontWeight: 700 }}>{(result.pixel_corr * 100).toFixed(1)}%</div>
               </div>
             </div>
           </div>
