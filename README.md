@@ -10,12 +10,15 @@ An end-to-end production-grade biometric artificial intelligence system for veri
 |---|---|---|
 | **Computer Vision** | OpenCV (`cv2`) | Otsu binarization, morphological closing, contour point-cloud merging, aspect-ratio padding (224x224). |
 | **Deep Learning** | PyTorch / Torchvision | Siamese Network (ResNet-18 backbone + projection head) trained via 2-phase Triplet Margin Loss with Cosine Distance. |
-| **Backend API** | FastAPI / Uvicorn | Asynchronous REST gateway with threadpool offloading, Pydantic validation, CORS, and health probes. |
+| **Backend API** | FastAPI / Uvicorn | Asynchronous REST gateway with threadpool offloading, Pydantic validation, CORS, rate limiting (slowapi), and health probes. |
 | **Frontend** | React 19 + Vite 8 | Glassmorphism UI with real-time telemetry, 3-tier verdict display, and legal disclaimers. |
 | **DevOps & Testing** | Docker, Pytest | Non-root container hardening, Docker Compose local stack, and automated unit/integration tests (30/30 passing). |
 
 ### Non-Blocking Asynchronous Inference
 To prevent blocking the single-threaded Python asyncio event loop during compute-heavy operations, all computer vision preprocessing (`cv_pipeline.py`) and neural network forward passes (`engine.py`) are dispatched to an asynchronous worker threadpool using `fastapi.concurrency.run_in_threadpool`. This guarantees predictable API response times, high throughput, and zero request starvation under concurrent loads.
+
+### Rate Limiting
+The `/verify` endpoint is protected by **slowapi** (10 requests/minute per client IP). Requests exceeding the quota receive `HTTP 429 Too Many Requests`. The Swagger interactive docs (`/docs`, `/redoc`) are **disabled in production** (`DEBUG=False`) to reduce the attack surface; set `DEBUG=True` in your `.env` to re-enable during development.
 
 ---
 

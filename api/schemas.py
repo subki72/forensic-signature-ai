@@ -81,7 +81,7 @@ class HealthResponse(BaseModel):
     """Liveness probe response model for GET /health."""
 
     status: str = Field(default="healthy", example="healthy")
-    version: str = Field(default="2.1.0", example="2.1.0")
+    version: str = Field(default="2.2.0", example="2.2.0")
     environment: str = Field(default="production", example="production")
     service: str = Field(
         default="Forensic Signature Verification API",

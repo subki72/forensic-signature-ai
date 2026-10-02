@@ -85,6 +85,7 @@ data/processed/*
 # ==============================================================================
 # Trained Model Weights & Checkpoints (Preserve model_config, LFS model, and .gitkeep)
 # ==============================================================================
+models/*.pt
 models/*.pth
 models/*.bin
 models/*.onnx

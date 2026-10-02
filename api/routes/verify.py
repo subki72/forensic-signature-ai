@@ -1,7 +1,7 @@
-"""Signature verification endpoint with threadpool offload and strict validation."""
+"""Signature verification endpoint with threadpool offload, strict validation, and rate limiting."""
 
 import time
-from fastapi import APIRouter, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile, status
 from fastapi.concurrency import run_in_threadpool
 
 from api.config import settings
@@ -13,6 +13,7 @@ from api.schemas import (
     VerificationResponse,
     VerificationResult,
 )
+from api.limiter import limiter
 
 router = APIRouter(tags=["Verification"])
 
@@ -76,12 +77,15 @@ def _compute_forensic_similarity(
         400: {"model": ErrorResponse, "description": "Invalid image format or decoding failure"},
         413: {"model": ErrorResponse, "description": "Uploaded image exceeds size limits"},
         415: {"model": ErrorResponse, "description": "Unsupported media type"},
+        429: {"model": ErrorResponse, "description": "Rate limit exceeded (10 requests/minute per IP)"},
         500: {"model": ErrorResponse, "description": "Internal verification error"},
     },
     summary="Verify Signature Authenticity",
     description="Compares a reference (genuine) specimen against a questioned signature using a Siamese Network.",
 )
+@limiter.limit("10/minute")
 async def verify_signature(
+    request: Request,
     file_asli: UploadFile = File(
         ...,
         description="Reference (authentic) specimen image file (JPEG/PNG/WEBP, max 5MB)",

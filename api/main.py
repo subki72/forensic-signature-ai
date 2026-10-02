@@ -1,16 +1,19 @@
 """FastAPI Application Entrypoint for Forensic Signature AI.
 
 Provides production-ready configuration, lifespan management, secure CORS,
-exception handling, and modular route inclusion.
+exception handling, rate limiting, and modular route inclusion.
 """
 
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
 from api.config import settings
 from api.engine import model_manager
+from api.limiter import limiter
 from api.logging_config import logger
 from api.routes.health import router as health_router
 from api.routes.verify import router as verify_router
@@ -32,6 +35,10 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down %s...", settings.PROJECT_NAME)
 
 
+# Disable interactive API docs in production to reduce attack surface
+_docs_url = "/docs" if settings.DEBUG else None
+_redoc_url = "/redoc" if settings.DEBUG else None
+
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
@@ -39,10 +46,14 @@ app = FastAPI(
         "Production-Ready Forensic Signature Verification System using a "
         "Siamese Neural Network (ResNet-18) and computer vision ink stroke analysis."
     ),
-    docs_url="/docs",
-    redoc_url="/redoc",
+    docs_url=_docs_url,
+    redoc_url=_redoc_url,
     lifespan=lifespan,
 )
+
+# Attach rate limiter state and handler
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Secure CORS configuration
 app.add_middleware(
@@ -50,7 +61,7 @@ app.add_middleware(
     allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["*"],
+    allow_headers=["Content-Type", "Accept", "Authorization", "X-Request-ID"],
 )
 
 
