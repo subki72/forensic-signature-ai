@@ -7,5 +7,5 @@ pydantic-settings==2.7.1
 slowapi==0.1.9
 opencv-python-headless==4.10.0.84
 numpy==1.26.4
-torch==2.5.1
+torch==2.15.0+cpu
 torchvision==0.20.1

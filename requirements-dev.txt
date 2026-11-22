@@ -22,7 +22,7 @@ numpy>=1.26.0,<3.0.0
 pillow>=10.0.0
 
 # Deep Learning Framework
-torch>=2.2.0,<3.0.0
+torch>=2.15.0+cpu,<3.0.0
 torchvision>=0.17.0,<1.0.0
 
 # Data Science, Biometric Evaluation Metrics & Visualization
