@@ -4,7 +4,7 @@ uvicorn[standard]==0.34.0
 python-multipart==0.0.20
 pydantic==2.10.4
 pydantic-settings==2.7.1
-slowapi==0.1.9
+slowapi==0.1.10
 opencv-python-headless==4.10.0.84
 numpy==1.26.4
 --extra-index-url https://download.pytorch.org/whl/cpu
