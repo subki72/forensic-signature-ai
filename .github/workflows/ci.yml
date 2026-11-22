@@ -64,7 +64,7 @@ jobs:
         run: docker build -t forensic-signature-ai:ci .
 
       - name: Run Trivy Container Vulnerability Scanner
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: forensic-signature-ai:ci
           format: table
