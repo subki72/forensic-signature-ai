@@ -19,7 +19,7 @@ slowapi>=0.1.9,<1.0.0
 # Computer Vision & Numerical Array Processing
 opencv-python-headless>=4.9.0
 numpy>=1.26.0,<3.0.0
-pillow>=10.0.0
+pillow>=13.0.0
 
 # Deep Learning Framework
 torch>=2.2.0,<3.0.0
