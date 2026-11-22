@@ -1,6 +1,72 @@
 # Legal Document AI - Forensic Signature Verification
 
-An end-to-end production-grade biometric artificial intelligence system for verifying handwritten signature authenticity on legal documents. 
+[![CI Pipeline](https://github.com/subki72/forensic-signature-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/subki72/forensic-signature-ai/actions/workflows/ci.yml)
+[![Maturity Grade: Production](https://img.shields.io/badge/Maturity%20Grade-Production%20(72.1%2F100)-success.svg)](https://github.com/subki72/forensic-signature-ai)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.5+-EE4C2C.svg?logo=pytorch&logoColor=white)](https://pytorch.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+An end-to-end production-grade biometric artificial intelligence system for verifying handwritten signature authenticity on legal documents.
+
+---
+
+## Quickstart (Single-Command Workflow)
+
+```bash
+git clone https://github.com/subki72/forensic-signature-ai.git
+cd forensic-signature-ai
+
+# 1. Install pinned dependencies
+make install
+
+# 2. Run automated test suite
+make test
+
+# 3. Run Ruff linter
+make lint
+
+# 4. Launch FastAPI verification API
+make run
+
+# 5. Build production Docker image
+make docker-build
+```
+
+---
+
+## Project Structure
+
+```text
+forensic-signature-ai/
+├── .github/
+│   ├── workflows/ci.yml         # Ruff lint, Pytest, Docker build, Semgrep SAST & Trivy scan
+│   └── dependabot.yml           # Automated weekly pip, npm & GitHub Actions security updates
+├── api/                         # FastAPI gateway, CV pipeline, Macro-Geometry & Siamese engine
+├── frontend/                    # React 19 + Vite forensic glassmorphism dashboard
+├── models/                      # Calibrated ResNet-18 Siamese weights & config
+├── notebooks/                   # Training & evaluation experiments
+├── scripts/                     # Specimen & maintenance scripts
+├── src/                         # Modular library facade & LRU cached threshold profile
+├── tests/                       # Automated unit & API integration tests
+├── .dockerignore                # Docker build exclusions
+├── .gitignore                   # Strict .env & artifact exclusions
+├── .pre-commit-config.yaml      # Pre-commit lint & secret hooks
+├── CHANGELOG.md                 # Semantic release history
+├── CONTRIBUTING.md              # Developer contribution guide
+├── docker-compose.yml           # Multi-container orchestration
+├── Dockerfile                   # Hardened non-root containerfile
+├── LICENSE                      # MIT License
+├── Makefile                     # Single-command workflow targets
+├── pytest.ini                   # Pytest execution config
+├── README.md                    # Project documentation
+├── requirements-lock.txt        # Deterministic locked dependencies
+├── requirements.txt             # Pinned production dependencies
+├── ruff.toml                    # Ruff linter config
+├── runbook.md                   # Production operational runbook
+├── SECURITY.md                  # Vulnerability disclosure policy
+└── uv.lock                      # Fast package resolver lockfile
+```
 
 The system implements an **Industrial Two-Phase Forensic Verification Pipeline (V2.3)** combining classical 2D computer vision macro-geometry gating with deep metric learning (Siamese ResNet-18) to reliably distinguish both cross-signer out-of-distribution discrepancies and high-effort skilled forgeries.
 
@@ -293,6 +359,16 @@ Compares a reference specimen image against a questioned document signature usin
 
 ---
 
+## Security & Governance
+
+- **Vulnerability Disclosure**: Review our security reporting guidelines in [SECURITY.md](SECURITY.md).
+- **Operational Runbook**: Production readiness probes, Git LFS recovery, and rate limit troubleshooting in [runbook.md](runbook.md).
+- **Contribution Guidelines**: Development setup and pull request etiquette in [CONTRIBUTING.md](CONTRIBUTING.md).
+- **Release Changelog**: Track semantic releases and version updates in [CHANGELOG.md](CHANGELOG.md).
+- **License**: Explicit open source licensing under the [MIT License](LICENSE).
+
+---
+
 ## 8. License & Legal Evidentiary Disclaimer
 
-This project is intended for educational, research, and supplemental forensic screening purposes. Automated signature verification algorithms must not be used as sole or conclusive judicial evidence in court proceedings without corroboration by a certified forensic document examiner.
+Distributed under the [MIT License](LICENSE). This project is intended for educational, research, and supplemental forensic screening purposes. Automated signature verification algorithms must not be used as sole or conclusive judicial evidence in court proceedings without corroboration by a certified forensic document examiner.
