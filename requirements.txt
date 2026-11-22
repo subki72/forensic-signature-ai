@@ -1,34 +1,12 @@
-# ==============================================================================
-# Production Serving & Lightweight Deployment Dependencies
-# For model training and Jupyter notebooks, use: requirements-dev.txt
-# ==============================================================================
-# Core API Framework & Production ASGI Server
-# ==============================================================================
-fastapi>=0.110.0,<1.0.0
-uvicorn[standard]>=0.29.0,<1.0.0
-python-multipart>=0.0.9,<1.0.0
-pydantic>=2.7.0,<3.0.0
-pydantic-settings>=2.2.0,<3.0.0
-
-# ==============================================================================
-# Rate Limiting
-# ==============================================================================
-slowapi>=0.1.9,<1.0.0
-
-# ==============================================================================
-# Computer Vision & Numerical Array Processing
-# ==============================================================================
-opencv-python-headless>=4.9.0
-numpy>=1.26.0,<3.0.0
-
-# ==============================================================================
-# Deep Learning (CPU-only build for lightweight deployment)
-# ==============================================================================
+# Production Serving & Lightweight Deployment Dependencies (Pinned)
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20
+pydantic==2.10.4
+pydantic-settings==2.7.1
+slowapi==0.1.9
+opencv-python-headless==4.10.0.84
+numpy==1.26.4
 --extra-index-url https://download.pytorch.org/whl/cpu
-torch>=2.2.0,<3.0.0
-torchvision>=0.17.0,<1.0.0
-
-# ==============================================================================
-# NOTE: Testing dependencies are in requirements-dev.txt
-# pytest, pytest-cov, pytest-asyncio, httpx
-# ==============================================================================
+torch==2.5.1
+torchvision==0.20.1

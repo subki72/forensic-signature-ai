@@ -1,0 +1,19 @@
+version = 1
+requires-python = ">=3.10"
+
+[[package]]
+name = "forensic-signature-ai"
+version = "2.3.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "fastapi" },
+    { name = "uvicorn" },
+    { name = "python-multipart" },
+    { name = "pydantic" },
+    { name = "pydantic-settings" },
+    { name = "slowapi" },
+    { name = "opencv-python-headless" },
+    { name = "numpy" },
+    { name = "torch" },
+    { name = "torchvision" },
+]
