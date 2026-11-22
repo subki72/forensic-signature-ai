@@ -26,7 +26,7 @@ torch>=2.2.0,<3.0.0
 torchvision>=0.17.0,<1.0.0
 
 # Data Science, Biometric Evaluation Metrics & Visualization
-scikit-learn>=1.4.0
+scikit-learn>=1.9.1
 matplotlib>=3.8.0
 pandas>=2.2.0
 
