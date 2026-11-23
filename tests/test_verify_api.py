@@ -1,6 +1,7 @@
 """End-to-end integration tests for the /verify endpoint."""
 
 import io
+
 from starlette.testclient import TestClient
 
 

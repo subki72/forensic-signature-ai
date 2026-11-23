@@ -1,6 +1,7 @@
 """Tests for input validation, security guard clauses, and error handling."""
 
 import io
+
 from starlette.testclient import TestClient
 
 

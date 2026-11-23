@@ -14,7 +14,6 @@ import numpy as np
 import torch
 
 from api.config import settings
-from api.logging_config import logger
 
 # ImageNet normalization constants
 IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)

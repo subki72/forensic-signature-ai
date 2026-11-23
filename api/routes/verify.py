@@ -10,6 +10,7 @@ Pipeline:
 """
 
 import time
+
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile, status
 from fastapi.concurrency import run_in_threadpool
 
@@ -17,19 +18,19 @@ from api.config import settings
 from api.cv_pipeline import (
     ImageProcessingError,
     decode_image,
-    isolate_ink_strokes,
     extract_contour_bbox,
-    pad_and_resize,
+    isolate_ink_strokes,
     normalize_image_to_tensor,
+    pad_and_resize,
 )
 from api.engine import model_manager
+from api.limiter import limiter
 from api.logging_config import logger
 from api.schemas import (
     ErrorResponse,
     VerificationResponse,
     VerificationResult,
 )
-from api.limiter import limiter
 
 router = APIRouter(tags=["Verification"])
 

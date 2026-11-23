@@ -14,10 +14,11 @@ Pipeline:
 import json
 import os
 import threading
+
+import numpy as np
 import torch
 import torch.nn.functional as F
 import torchvision.models as models
-import numpy as np
 
 from api.config import settings
 from api.logging_config import logger

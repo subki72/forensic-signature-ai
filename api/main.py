@@ -5,6 +5,7 @@ exception handling, rate limiting, and modular route inclusion.
 """
 
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse

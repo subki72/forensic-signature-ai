@@ -55,7 +55,7 @@ class Settings(BaseSettings):
     MODEL_PATH: str = "models/forensic_signature_v2.pt"
     CONFIG_PATH: str = "models/model_config.json"
     EMBEDDING_DIM: int = 128
-    
+
     # 3-Tier Biometric Classification Thresholds
     AUTHENTIC_THRESHOLD: float = 0.70  # >= 0.70 Cosine Sim -> Authentic (UI >= 85%)
     INCONCLUSIVE_THRESHOLD: float = 0.55  # 0.55 - 0.70 -> Inconclusive (UI 77.5% - 85%)

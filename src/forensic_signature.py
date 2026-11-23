@@ -4,8 +4,8 @@ Re-exports configuration, macro-geometry gate, CV pipeline, Siamese engine,
 and provides a deterministic LRU response cache for repeated specimen lookups.
 """
 
-from functools import lru_cache
 import logging
+from functools import lru_cache
 from typing import Dict
 
 from api.config import settings
